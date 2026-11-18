@@ -286,7 +286,7 @@ if(!record.ok){const err:any=await record.json().catch(()=>({}));return json(err
 let dtChargeKey="";
 if(action==="generate"&&dtBillingEnabled()){
  if(!dtBillingKey())return json(503,{error:"A cobrança de créditos ainda está sendo configurada."});
- dtChargeKey=String(data.requestKey||"");
+ dtChargeKey=String(data.requestKey||crypto.randomUUID());
  if(!/^[a-zA-Z0-9_-]{8,128}$/.test(dtChargeKey))return json(400,{error:"Identificador único do anúncio obrigatório."});
  try{
   const reservation=await dtBillingReserve(user.token,dtChargeKey);
@@ -306,7 +306,7 @@ const payload:any=await out.json(),raw=(payload.output||[]).flatMap((o:any)=>o.c
 const result=JSON.parse(raw);
 if(typeof result.title!=="string"||typeof result.description!=="string"||!result.title.trim()||!result.description.trim()){await dtRefund();return json(502,{error:"A IA não retornou um anúncio válido."});}
 if(dtChargeKey){try{const finished=await dtBillingFinish(user.user.id,dtChargeKey,true,0);if(finished.result!=="completed")return json(503,{error:"Não foi possível confirmar a cobrança. Consulte o histórico."})}catch{return json(503,{error:"Falha ao confirmar o crédito. Consulte o histórico antes de repetir."})}}
-return json(200,{title:result.title.trim().slice(0,180),description:result.description.trim().slice(0,3500),assistant_message:String(result.assistant_message||"Revise os dados do anúncio.").slice(0,220),item_suggestion:String(result.item_suggestion||"").slice(0,80),model:"gpt-4.1-mini"});
+return json(200,{title:result.title.trim().slice(0,180),description:result.description.trim().slice(0,3500),assistant_message:String(result.assistant_message||"Revise os dados do anúncio.").slice(0,220),item_suggestion:String(result.item_suggestion||"").slice(0,80),requestKey:dtChargeKey||null,model:"gpt-4.1-mini"});
 }catch(e){await dtRefund();console.warn("dt_ai_text_error",String(e).slice(0,180));return json(502,{error:"Não foi possível concluir a geração com IA. Tente novamente."})}
 }
 
