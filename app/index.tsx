@@ -296,8 +296,8 @@ return json(200,{images,requestKey:imageKey||null,model:"gpt-image-2",quality:"l
 
 
 // Server-only billing helpers. Never expose the service role credential to browsers.
-const dtBillingEnabled=()=>Bun.env.DT_CREDIT_BILLING_ENABLED==="true";
-const dtBillingKey=()=>Bun.env.DT_SUPABASE_SERVICE_ROLE_KEY||"";
+function dtBillingEnabled(){return Bun.env.DT_CREDIT_BILLING_ENABLED==="true";}
+function dtBillingKey(){return Bun.env.DT_SUPABASE_SERVICE_ROLE_KEY||"";}
 async function dtBillingReserve(token:string,requestKey:string){
  const r=await fetch(origin()+"/rest/v1/rpc/dt_reserve_ad_credit",{method:"POST",headers:dtDbHeaders(token,{"content-type":"application/json"}),body:JSON.stringify({p_request_key:requestKey}),signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw Error("credit_reserve_failed");return await r.json() as any;
