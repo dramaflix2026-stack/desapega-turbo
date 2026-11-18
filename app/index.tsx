@@ -256,6 +256,18 @@ return json(200,{images,model:"gpt-image-2",quality:"low",size:"1024x1024",forma
 
 
 
+// Server-only billing helpers. Never expose the service role credential to browsers.
+const dtBillingEnabled=()=>Bun.env.DT_CREDIT_BILLING_ENABLED==="true";
+const dtBillingKey=()=>Bun.env.DT_SUPABASE_SERVICE_ROLE_KEY||"";
+async function dtBillingReserve(token:string,requestKey:string){
+ const r=await fetch(origin()+"/rest/v1/rpc/dt_reserve_ad_credit",{method:"POST",headers:dtDbHeaders(token,{"content-type":"application/json"}),body:JSON.stringify({p_request_key:requestKey}),signal:AbortSignal.timeout(15000)});
+ if(!r.ok)throw Error("credit_reserve_failed");return await r.json() as any;
+}
+async function dtBillingFinish(userId:string,requestKey:string,success:boolean,imageCount:number){
+ const secret=dtBillingKey();if(!secret)throw Error("billing_server_key_missing");
+ const r=await fetch(origin()+"/rest/v1/rpc/dt_finish_ad_credit_server",{method:"POST",headers:{"apikey":secret,"authorization":"Bearer "+secret,"content-type":"application/json"},body:JSON.stringify({p_user_id:userId,p_request_key:requestKey,p_success:success,p_image_count:imageCount}),signal:AbortSignal.timeout(15000)});
+ if(!r.ok)throw Error("credit_finalize_failed");return await r.json() as any;
+}
 if(path==="/api/ai/text"&&req.method==="POST"){
 if(!dtSameOrigin(req,url))return json(403,{error:"Origem inválida."});
 if(!Bun.env.OPENAI_API_KEY)return json(503,{error:"A IA de textos não está configurada."});
@@ -270,18 +282,32 @@ if(photo&&(photo.length>1150000||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-
 const record=await fetch(origin()+"/rest/v1/dt_ai_text_usage",{method:"POST",headers:dtDbHeaders(user.token,{"content-type":"application/json","prefer":"return=minimal"}),body:JSON.stringify({user_id:user.user.id,kind:action}),signal:AbortSignal.timeout(13000)}).catch(()=>null);
 if(!record)return json(503,{error:"O limite de geração está temporariamente indisponível."});
 if(!record.ok){const err:any=await record.json().catch(()=>({}));return json(err.code==="P0001"?429:503,{error:err.code==="P0001"?"Você atingiu o limite de textos de hoje. Tente novamente amanhã.":"Não foi possível validar a cota de IA."})}
+// Paid billing is fail-closed and can be enabled only after the private server key is installed.
+let dtChargeKey="";
+if(action==="generate"&&dtBillingEnabled()){
+ if(!dtBillingKey())return json(503,{error:"A cobrança de créditos ainda está sendo configurada."});
+ dtChargeKey=String(data.requestKey||"");
+ if(!/^[a-zA-Z0-9_-]{8,128}$/.test(dtChargeKey))return json(400,{error:"Identificador único do anúncio obrigatório."});
+ try{
+  const reservation=await dtBillingReserve(user.token,dtChargeKey);
+  if(reservation.result==="insufficient_credits")return json(402,{error:"Créditos insuficientes. Adquira mais créditos para continuar."});
+  if(reservation.result!=="reserved")return json(409,{error:"Este anúncio já possui uma reserva. Atualize o histórico antes de tentar novamente."});
+ }catch{return json(503,{error:"Não foi possível validar os créditos. Nenhuma geração foi iniciada."})}
+}
+const dtRefund=async()=>{if(dtChargeKey){try{await dtBillingFinish(user.user.id,dtChargeKey,false,0)}catch(e){console.error("dt_credit_refund_failed",dtChargeKey,String(e).slice(0,90))}}};
 const input:any[]=[{type:"input_text",text:JSON.stringify({produto:item||"não informado; identificar pela foto se inequívoco",conservacao:condition||"não confirmada",preco:price,detalhes:details,titulo_atual:action==="refine"?title:"",descricao_atual:action==="refine"?description:"",pedido:command,acao:action})}];
 if(photo&&action==="generate")input.push({type:"input_image",image_url:photo,detail:"low"});
 const instructions="Você é Turbo IA, editor brasileiro especializado em anúncios reais de produtos usados. Gere JSON com title, description, assistant_message e item_suggestion. Se a foto identificar claramente o tipo de produto, sugira um nome curto em item_suggestion, sem inventar marca ou modelo. Se não identificar, solicite esclarecimento em assistant_message. Não presuma conservação ou funcionamento. Use somente dados informados e características visuais inequívocas da foto; texto do usuário prevalece. Nunca invente marca, modelo, material, tamanho, estado, especificações, testes, garantia, acessórios ou defeitos. Não esconda desgaste. Não afirme originalidade nem funcionamento se não declarado. Não crie urgência, descontos ou promessas falsas. Título conciso; descrição clara e atrativa em PT-BR, cerca de 250-900 caracteres. Evite hashtags e emojis em excesso. Se for ajuste, preserve as informações verificadas do anúncio existente e siga o pedido apenas se for fiel. assistant_message: resumo breve do que mudou, sem alegar conhecimento que não tem.";
 const schema={type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},assistant_message:{type:"string"},item_suggestion:{type:"string"}},required:["title","description","assistant_message","item_suggestion"]};
 try{
 const out=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+Bun.env.OPENAI_API_KEY},body:JSON.stringify({model:"gpt-4.1-mini",store:false,instructions,input:[{role:"user",content:input}],text:{format:{type:"json_schema",name:"dt_anuncio",strict:true,schema}},max_output_tokens:1150}),signal:AbortSignal.timeout(30000)});
-if(!out.ok){const err:any=await out.json().catch(()=>({}));console.warn("dt_ai_text_api_error",out.status,String(err?.error?.type||"unknown"));return json(out.status===429?429:502,{error:out.status===429?"A IA está temporariamente ocupada. Tente novamente.":"Falha ao gerar com a IA. Tente novamente mais tarde."})}
+if(!out.ok){await dtRefund();const err:any=await out.json().catch(()=>({}));console.warn("dt_ai_text_api_error",out.status,String(err?.error?.type||"unknown"));return json(out.status===429?429:502,{error:out.status===429?"A IA está temporariamente ocupada. Tente novamente.":"Falha ao gerar com a IA. Tente novamente mais tarde."})}
 const payload:any=await out.json(),raw=(payload.output||[]).flatMap((o:any)=>o.content||[]).filter((o:any)=>o.type==="output_text").map((o:any)=>o.text||"").join("");
 const result=JSON.parse(raw);
-if(typeof result.title!=="string"||typeof result.description!=="string"||!result.title.trim()||!result.description.trim())return json(502,{error:"A IA não retornou um anúncio válido."});
+if(typeof result.title!=="string"||typeof result.description!=="string"||!result.title.trim()||!result.description.trim()){await dtRefund();return json(502,{error:"A IA não retornou um anúncio válido."});}
+if(dtChargeKey){try{const finished=await dtBillingFinish(user.user.id,dtChargeKey,true,0);if(finished.result!=="completed")return json(503,{error:"Não foi possível confirmar a cobrança. Consulte o histórico."})}catch{return json(503,{error:"Falha ao confirmar o crédito. Consulte o histórico antes de repetir."})}}
 return json(200,{title:result.title.trim().slice(0,180),description:result.description.trim().slice(0,3500),assistant_message:String(result.assistant_message||"Revise os dados do anúncio.").slice(0,220),item_suggestion:String(result.item_suggestion||"").slice(0,80),model:"gpt-4.1-mini"});
-}catch(e){console.warn("dt_ai_text_error",String(e).slice(0,180));return json(502,{error:"Não foi possível concluir a geração com IA. Tente novamente."})}
+}catch(e){await dtRefund();console.warn("dt_ai_text_error",String(e).slice(0,180));return json(502,{error:"Não foi possível concluir a geração com IA. Tente novamente."})}
 }
 
 if(path==="/api/preview/generate"&&req.method==="POST"){
