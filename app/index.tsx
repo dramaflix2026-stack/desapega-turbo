@@ -216,6 +216,7 @@ let imageUser:Awaited<ReturnType<typeof getUser>>=null;
 let imageKey="";
 let imageReserved=false;
 let imageAttach=false;
+let imageExistingCount=0;
 if(billing){
  if(!dtBillingKey())return json(503,{error:"A cobrança de créditos está indisponível."});
  imageUser=await getUser(req);if(!imageUser)return json(401,{error:"Entre na sua conta para gerar imagens."});
@@ -225,8 +226,8 @@ if(billing){
   const lookup=await fetch(origin()+"/rest/v1/dt_ad_credits?select=status,image_count&user_id=eq."+imageUser.user.id+"&request_key=eq."+encodeURIComponent(imageKey)+"&limit=1",{headers:dtDbHeaders(imageUser.token),signal:AbortSignal.timeout(15000)});
   if(!lookup.ok)throw Error("lookup_failed");
   const records:any[]=await lookup.json();const existing=records[0];
-  if(existing?.status==="completed"&&existing.image_count===0)imageAttach=true;
-  else if(existing)return json(409,{error:"Este anúncio já utilizou a geração de imagens ou possui uma reserva pendente."});
+  if(existing?.status==="completed"&&Number(existing.image_count)<4){imageAttach=true;imageExistingCount=Number(existing.image_count)||0;if(imageExistingCount+count>4)return json(409,{error:"Este anúncio permite até 4 imagens no total. Restam "+(4-imageExistingCount)+" imagem(ns). Selecione uma quantidade menor."});}
+  else if(existing)return json(409,{error:"Este anúncio já atingiu o limite de 4 imagens ou possui uma reserva pendente."});
   else{
    const reservation=await dtBillingReserve(imageUser.token,imageKey);
    if(reservation.result==="insufficient_credits")return json(402,{error:"Créditos insuficientes."});
