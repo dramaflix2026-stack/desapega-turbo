@@ -458,6 +458,30 @@ if(!photo.ok)return json(404,{error:"A foto não está disponível."});
 return new Response(photo.body,{status:200,headers:{"content-type":photo.headers.get("content-type")||"image/webp","cache-control":"private,max-age=180","x-content-type-options":"nosniff"}});
 }catch{return json(503,{error:"Não foi possível carregar a fotografia."})}
 }
+if(path==="/api/credits/reserve"&&req.method==="POST"){
+ if(!dtSameOrigin(req,url))return json(403,{error:"Origem inválida."});
+ if(!configured())return json(503,{error:"Banco indisponível."});
+ const user=await getUser(req);if(!user)return json(401,{error:"Entre na sua conta."});
+ if(!(req.headers.get("content-type")||"").includes("application/json"))return json(415,{error:"Envie JSON."});
+ if(Number(req.headers.get("content-length")||0)>2048)return json(413,{error:"Solicitação grande demais."});
+ let payload:any;try{payload=await req.json()}catch{return json(400,{error:"JSON inválido."})}
+ const requestKey=String(payload?.requestKey||"");
+ if(!/^[a-zA-Z0-9_-]{8,128}$/.test(requestKey))return json(400,{error:"Identificador do anúncio inválido."});
+ try{
+  const response=await fetch(origin()+"/rest/v1/rpc/dt_reserve_ad_credit",{method:"POST",headers:dtDbHeaders(user.token,{"content-type":"application/json"}),body:JSON.stringify({p_request_key:requestKey}),signal:AbortSignal.timeout(15000)});
+  if(!response.ok)return json(503,{error:"Não foi possível reservar o crédito."});
+  const result:any=await response.json();
+  return json(result?.result==="insufficient_credits"?402:200,result);
+ }catch{return json(503,{error:"Falha na reserva de crédito."})}
+}
+if(path==="/api/credits/status"&&req.method==="GET"){
+ const user=await getUser(req);if(!user)return json(401,{error:"Entre na sua conta."});
+ try{
+  const response=await fetch(origin()+"/rest/v1/dt_ad_credits?select=id,request_key,status,image_count,created_at&user_id=eq."+encodeURIComponent(user.user.id)+"&order=created_at.desc&limit=30",{headers:dtDbHeaders(user.token),signal:AbortSignal.timeout(15000)});
+  if(!response.ok)return json(503,{error:"Não foi possível consultar os consumos."});
+  return json(200,{items:await response.json()});
+ }catch{return json(503,{error:"Falha ao consultar os consumos."})}
+}
 if(path==="/api/account"&&req.method==="GET"){
 if(!configured())return json(503,{error:"O banco exclusivo ainda não está conectado."});
 try{const session=await getUser(req);if(!session)return json(401,{error:"Acesso não autorizado."});
