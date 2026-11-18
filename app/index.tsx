@@ -241,7 +241,7 @@ const imageComplete=async(n:number)=>{
  const secret=dtBillingKey();
  if(imageReserved){const finished=await dtBillingFinish(imageUser.user.id,imageKey,true,n);return finished.result==="completed"}
  if(imageAttach){
-  const response=await fetch(origin()+"/rest/v1/rpc/dt_attach_ad_images_server",{method:"POST",headers:{"apikey":secret,"authorization":"Bearer "+secret,"content-type":"application/json"},body:JSON.stringify({p_user_id:imageUser.user.id,p_request_key:imageKey,p_image_count:n}),signal:AbortSignal.timeout(15000)});
+  const response=await fetch(origin()+"/rest/v1/rpc/dt_attach_ad_images_server",{method:"POST",headers:{"apikey":secret,...(secret.startsWith("sb_secret_")?{}:{"authorization":"Bearer "+secret}),"content-type":"application/json"},body:JSON.stringify({p_user_id:imageUser.user.id,p_request_key:imageKey,p_image_count:n}),signal:AbortSignal.timeout(15000)});
   if(!response.ok)return false;const attached:any=await response.json();return attached.result==="attached";
  }
  return false;
@@ -304,7 +304,7 @@ async function dtBillingReserve(token:string,requestKey:string){
 }
 async function dtBillingFinish(userId:string,requestKey:string,success:boolean,imageCount:number){
  const secret=dtBillingKey();if(!secret)throw Error("billing_server_key_missing");
- const r=await fetch(origin()+"/rest/v1/rpc/dt_finish_ad_credit_server",{method:"POST",headers:{"apikey":secret,"authorization":"Bearer "+secret,"content-type":"application/json"},body:JSON.stringify({p_user_id:userId,p_request_key:requestKey,p_success:success,p_image_count:imageCount}),signal:AbortSignal.timeout(15000)});
+ const r=await fetch(origin()+"/rest/v1/rpc/dt_finish_ad_credit_server",{method:"POST",headers:{"apikey":secret,...(secret.startsWith("sb_secret_")?{}:{"authorization":"Bearer "+secret}),"content-type":"application/json"},body:JSON.stringify({p_user_id:userId,p_request_key:requestKey,p_success:success,p_image_count:imageCount}),signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw Error("credit_finalize_failed");return await r.json() as any;
 }
 if(path==="/api/ai/text"&&req.method==="POST"){
@@ -318,7 +318,7 @@ const action=String(data.action||""),item=String(data.item||"").trim().slice(0,8
 if(!["generate","refine"].includes(action)||(action==="generate"&&!item&&!data.photo)||(action==="refine"&&(!item||!title||!description||!command)))return json(400,{error:"Preencha o produto e descreva o ajuste desejado."});
 const photo=typeof data.photo==="string"?data.photo:"";
 if(photo&&(photo.length>1150000||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)))return json(400,{error:"Formato de fotografia inválido."});
-const record=await fetch(origin()+"/rest/v1/dt_ai_text_usage",{method:"POST",headers:dtDbHeaders(user.token,{"content-type":"application/json","prefer":"return=minimal"}),body:JSON.stringify({user_id:user.user.id,kind:action}),signal:AbortSignal.timeout(13000)}).catch(()=>null);
+const record=dtBillingEnabled()&&action==="generate"?{ok:true}:await fetch(origin()+"/rest/v1/dt_ai_text_usage",{method:"POST",headers:dtDbHeaders(user.token,{"content-type":"application/json","prefer":"return=minimal"}),body:JSON.stringify({user_id:user.user.id,kind:action}),signal:AbortSignal.timeout(13000)}).catch(()=>null);
 if(!record)return json(503,{error:"O limite de geração está temporariamente indisponível."});
 if(!record.ok){const err:any=await record.json().catch(()=>({}));return json(err.code==="P0001"?429:503,{error:err.code==="P0001"?"Você atingiu o limite de textos de hoje. Tente novamente amanhã.":"Não foi possível validar a cota de IA."})}
 // Paid billing is fail-closed and can be enabled only after the private server key is installed.
