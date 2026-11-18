@@ -208,12 +208,47 @@ const style=String(form.get("style")||"white");
 const count=Number(form.get("count")||1);
 if(!item||!["novo","otimo","bom","regular"].includes(condition))return json(400,{error:"Informe produto e conservação antes de gerar."});
 if(!["white","neutral"].includes(style)||![1,2,4].includes(count))return json(400,{error:"Escolha 1, 2 ou 4 imagens e um estilo válido."});
+const billing=dtBillingEnabled();
+let imageUser:Awaited<ReturnType<typeof getUser>>=null;
+let imageKey="";
+let imageReserved=false;
+let imageAttach=false;
+if(billing){
+ if(!dtBillingKey())return json(503,{error:"A cobrança de créditos está indisponível."});
+ imageUser=await getUser(req);if(!imageUser)return json(401,{error:"Entre na sua conta para gerar imagens."});
+ imageKey=String(form.get("requestKey")||"");
+ if(!/^[a-zA-Z0-9_-]{8,128}$/.test(imageKey))return json(400,{error:"Identificador do anúncio ausente. Gere primeiro o texto do anúncio."});
+ try{
+  const lookup=await fetch(origin()+"/rest/v1/dt_ad_credits?select=status,image_count&user_id=eq."+imageUser.user.id+"&request_key=eq."+encodeURIComponent(imageKey)+"&limit=1",{headers:dtDbHeaders(imageUser.token),signal:AbortSignal.timeout(15000)});
+  if(!lookup.ok)throw Error("lookup_failed");
+  const records:any[]=await lookup.json();const existing=records[0];
+  if(existing?.status==="completed"&&existing.image_count===0)imageAttach=true;
+  else if(existing)return json(409,{error:"Este anúncio já utilizou a geração de imagens ou possui uma reserva pendente."});
+  else{
+   const reservation=await dtBillingReserve(imageUser.token,imageKey);
+   if(reservation.result==="insufficient_credits")return json(402,{error:"Créditos insuficientes."});
+   if(reservation.result!=="reserved")return json(409,{error:"Este anúncio já foi processado."});
+   imageReserved=true;
+  }
+ }catch{return json(503,{error:"Não foi possível validar o crédito das imagens."})}
+}
+const imageRefund=async()=>{if(imageReserved&&imageUser){try{await dtBillingFinish(imageUser.user.id,imageKey,false,0)}catch(e){console.error("dt_image_refund_failed",String(e).slice(0,90))}}};
+const imageComplete=async(n:number)=>{
+ if(!billing||!imageUser)return true;
+ const secret=dtBillingKey();
+ if(imageReserved){const finished=await dtBillingFinish(imageUser.user.id,imageKey,true,n);return finished.result==="completed"}
+ if(imageAttach){
+  const response=await fetch(origin()+"/rest/v1/rpc/dt_attach_ad_images_server",{method:"POST",headers:{"apikey":secret,"authorization":"Bearer "+secret,"content-type":"application/json"},body:JSON.stringify({p_user_id:imageUser.user.id,p_request_key:imageKey,p_image_count:n}),signal:AbortSignal.timeout(15000)});
+  if(!response.ok)return false;const attached:any=await response.json();return attached.result==="attached";
+ }
+ return false;
+};
 const now=Date.now(),day=new Date(now).toISOString().slice(0,10),ip=dtImageIp(req);
 const use=dtImageUsage.get(ip),current=use&&use.date===day?use:{date:day,used:0,last:0};
 if(dtGlobalImageUsage.date!==day)dtGlobalImageUsage={date:day,used:0};
-if(now-current.last<20000)return json(429,{error:"Aguarde alguns segundos antes de gerar novamente."});
-if(current.used+count>4)return json(429,{error:"Limite de teste: até 4 imagens por endereço de acesso a cada dia."});
-if(dtGlobalImageUsage.used+count>24)return json(429,{error:"Limite diário de imagens de demonstração atingido. Tente amanhã."});
+if(!billing&&now-current.last<20000)return json(429,{error:"Aguarde alguns segundos antes de gerar novamente."});
+if(!billing&&current.used+count>4)return json(429,{error:"Limite de teste: até 4 imagens por endereço de acesso a cada dia."});
+if(!billing&&dtGlobalImageUsage.used+count>24)return json(429,{error:"Limite diário de imagens de demonstração atingido. Tente amanhã."});
 // Reserve before network await to avoid simultaneous overspend.
 current.used+=count;current.last=now;dtImageUsage.set(ip,current);dtGlobalImageUsage.used+=count;
 const scene=style==="white"?
@@ -241,7 +276,7 @@ requestForm.append("output_format","webp");
 requestForm.append("output_compression","55");
 try{
 const openai=await fetch("https://api.openai.com/v1/images/edits",{method:"POST",headers:{"authorization":"Bearer "+secret},body:requestForm,signal:AbortSignal.timeout(170000)});
-if(!openai.ok){
+if(!openai.ok){await imageRefund();
 if(openai.status===401)return json(502,{error:"A chave de API precisa ser atualizada na Railway."});
 if(openai.status===429)return json(429,{error:"A OpenAI está sem cota ou limitando solicitações. Confira créditos e orçamento da API."});
 if(openai.status===403)return json(502,{error:"Sua conta ainda não tem acesso ao modelo de imagens. Verifique a organização OpenAI."});
@@ -249,9 +284,10 @@ if(openai.status===400||openai.status===404)return json(502,{error:"O GPT Image 
 return json(502,{error:"A OpenAI não conseguiu gerar as imagens agora (erro "+openai.status+")."});
 }
 const result:any=await openai.json(),images=Array.isArray(result.data)?result.data.map((x:any)=>x.b64_json).filter((v:any)=>typeof v==="string"&&v.length>0):[];
-if(!images.length)return json(502,{error:"A OpenAI respondeu sem imagens. Nenhum modelo alternativo foi usado."});
-return json(200,{images,model:"gpt-image-2",quality:"low",size:"1024x1024",format:"webp",count:images.length});
-}catch(e){return json(502,{error:"A geração demorou demais ou não pôde conectar com a OpenAI. Tente mais tarde."})}
+if(!images.length){await imageRefund();return json(502,{error:"A OpenAI respondeu sem imagens. Nenhum modelo alternativo foi usado."});}
+if(!(await imageComplete(images.length)))return json(503,{error:"As imagens foram geradas, mas não foi possível confirmar o crédito. Consulte o histórico antes de repetir."});
+return json(200,{images,requestKey:imageKey||null,model:"gpt-image-2",quality:"low",size:"1024x1024",format:"webp",count:images.length});
+}catch(e){await imageRefund();return json(502,{error:"A geração demorou demais ou não pôde conectar com a OpenAI. Tente mais tarde."})}
 }
 
 
