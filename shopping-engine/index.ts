@@ -1325,19 +1325,28 @@ async function serpApiProductSearch(query,storeId){
    const offer=serpApiOffer(item,v.q,observedAt);
    if(offer)found.push(offer);
   }
-  // Google Product API exposes seller offers for Shopping results whose product links point to Google.
-  // Limit expansion to three products per request to bound SerpApi credits.
-  const expandable=raw.filter(x=>x.product_id&&!serpApiDirectLink(x.link,x.source)).slice(0,3);
+  // SerpApi Shopping returns an opaque Google Product page_token, NOT a usable product_id.
+  // Avoid the former invalid product_id requests and cap detail calls to protect free quota.
+  const expandable=raw.filter(x=>x.serpapi_product_api&&!serpApiDirectLink(x.link,x.source)).slice(0,2);
   for(const item of expandable){
    try{
-    const details=await serpApiRequest({engine:"google_product",product_id:item.product_id,gl:"br",hl:"pt",offers:"1"});
-    const sellers=details.sellers_results?.online_sellers||details.sellers_results?.sellers||details.online_sellers||[];
-    for(const seller of Array.isArray(sellers)?sellers:[]){
+    const productApi=new URL(item.serpapi_product_api);
+    if(productApi.hostname!=="serpapi.com"||productApi.searchParams.get("engine")!=="google_product")continue;
+    const pageToken=productApi.searchParams.get("page_token");
+    if(!pageToken)continue;
+    const details=await serpApiRequest({engine:"google_product",page_token:pageToken,gl:"br",hl:"pt"});
+    const sellers=[...(Array.isArray(details.sellers_results?.online_sellers)?details.sellers_results.online_sellers:[]),
+      ...(Array.isArray(details.sellers_results?.sellers)?details.sellers_results.sellers:[]),
+      ...(Array.isArray(details.online_sellers)?details.online_sellers:[]),
+      ...(Array.isArray(details.prices)?details.prices:[])];
+    for(const seller of sellers){
      const candidate=serpApiOffer({...seller,title:item.title,thumbnail:item.thumbnail,
        extracted_price:seller.extracted_price||seller.price||item.extracted_price},v.q,observedAt,
        seller.name||seller.source||seller.merchant);
      if(candidate)found.push(candidate);
     }
+    console.log("dt_serpapi_product_details",JSON.stringify({sellers:sellers.length,direct:found.length,
+      sellerKeys:sellers[0]?Object.keys(sellers[0]).filter(k=>!/token|key/i.test(k)).slice(0,16):[]}));
    }catch(error){console.warn("dt_serpapi_product_expansion",String(error.message||error).slice(0,90))}
   }
   const offers=[...new Map(found.filter(x=>!conf||conf.store.test(x.merchant)).map(x=>[x.url,x])).values()]
