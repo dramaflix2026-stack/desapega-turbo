@@ -773,7 +773,19 @@ window.__dtSearchOffers=searchInternalOffers;
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
-      const price=document.createElement('b');price.textContent=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
+      const price=document.createElement('b');
+      const amount=Number(offer.price),money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(amount);
+      // Google Shopping may expose an installment amount as extracted_price.
+      // Keep the listing and its direct link, but never label a likely installment as the full device price.
+      const smartphone=/\\b(?:galaxy|iphone|smartphone|celular|redmi|poco|motorola)\\b/i.test(q+' '+offer.title);
+      const suspiciousInstallment=smartphone&&amount<500;
+      price.textContent=suspiciousInstallment?'Valor informado: '+money:money;
+      if(suspiciousInstallment){
+       const warning=document.createElement('small');
+       warning.textContent='Possível parcela — confira o preço total na loja';
+       warning.style.cssText='display:block;font-size:11px;line-height:1.4;margin-top:5px;color:#805600';
+       price.append(warning);
+      }
       const action=document.createElement('div');action.style.marginTop='12px';
       const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
       action.append(link);card.append(name,title,price,action);host.append(card);
