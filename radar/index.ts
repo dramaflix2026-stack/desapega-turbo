@@ -109,8 +109,6 @@ async function dtLocateForOffer(button,container,offer){
   container.replaceChildren(note);
  }
 }
-window.__dtLocateOffer=dtLocateForOffer;
-
 function dtOfferCard(offer,query){
  const card=document.createElement('article');card.className='radar-offer radar-mvp-card';
  const store=document.createElement('div');store.className='radar-mvp-store';store.textContent=offer.merchant||'Loja';
@@ -746,24 +744,7 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      const linkArea=document.createElement('div');linkArea.style.marginTop='12px';
-      const locate=document.createElement('button');locate.type='button';locate.className='radar-mvp-more';locate.textContent='Buscar link da loja ↗';
-      locate.addEventListener('click',async()=>{
-       if(locate.disabled)return;locate.disabled=true;locate.textContent='Buscando link...';linkArea.textContent='';
-       try{
-        const endpoint=(location.pathname.startsWith('/radar')?'/radar':'/')+'?api=locate';
-        const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
-        const data=await response.json().catch(()=>({}));
-        if(!response.ok||data.status!=='ready'||data.matchLevel!=='same_variant'||!data.url)throw Error(data.message||data.error||'Página de produto exata não encontrada.');
-        const url=new URL(data.url);const merchant=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();const host=url.hostname.toLowerCase();
-        const tokens=merchant.split(/[^a-z0-9]+/).filter(x=>x.length>=4);
-        const hostFlat=host.replace(/[^a-z0-9]/g,'');
-        const hostMatches=tokens.some(token=>hostFlat.includes(token))||(/amazon/.test(merchant)&&/amazon\\.com\\.br$/.test(host))||(/magalu|magazine luiza/.test(merchant)&&/magazineluiza\\.com\\.br$/.test(host))||(/mercado livre|mercadolivre/.test(merchant)&&/mercadolivre\\.com\\.br$/.test(host))||(/shopee/.test(merchant)&&/shopee\\.com\\.br$/.test(host));
-        if(url.protocol!=='https:'||url.username||url.password||url.port||!hostMatches||url.pathname.length<4||/^\\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\\/|$)/i.test(url.pathname))throw Error('O link encontrado não passou na validação da loja.');
-        const anchor=document.createElement('a');anchor.href=url.href;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.textContent='Abrir página do produto ↗';anchor.className='radar-mvp-more';linkArea.replaceChildren(anchor);locate.textContent='Produto localizado';
-       }catch(error){linkArea.textContent=String(error.message||error);locate.disabled=false;locate.textContent='Tentar novamente'}
-      });
-      linkArea.append(locate);card.append(name,title,price,linkArea);host.append(card);
+      card.append(name,title,price);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
