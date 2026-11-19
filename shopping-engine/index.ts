@@ -752,7 +752,8 @@ async function universalProductSearch(q){
    if(/\bebay\b|enjoei/i.test(merchant)||/[\u3040-\u30ff\u3400-\u9fff]/u.test(String(x.title))){diagnostics.push({title:String(x.title).slice(0,200),merchant,reason:"excluded_marketplace",price});continue;}
    const candidate={
     title:String(x.title).slice(0,280),merchant,price,
-    date:observedAt,currency:"BRL",url:safeMerchantLink(x.link),
+    date:observedAt,currency:"BRL",url:directLocatorURL(x.link,directLocatorStore(merchant)),
+    linkFrom:directLocatorURL(x.link,directLocatorStore(merchant))?"merchant_exact_product":null,
     status:"review_required",source:"Serper / Google Shopping",
     productId:x.productId?String(x.productId).slice(0,100):null
    };
