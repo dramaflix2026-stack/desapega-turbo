@@ -745,7 +745,7 @@ window.__dtSearchOffers=searchInternalOffers;
      const validProduct=offer=>{
       const title=normalized(offer.title),merchant=normalized(offer.merchant);
       if(!title||!merchant||/(?:recondicionado|seminovo|usado|reformado|capinha|pelicula|fone|buds|combo|kit|acessorio)/i.test(title))return false;
-      if(wantedModel&&!new RegExp('\\\b'+wantedModel[0].replace(/\s+/g,'\\\s*')+'\\\b','i').test(title))return false;
+      if(wantedModel&&!title.split(/[^a-z0-9]+/).includes(wantedModel[0].replace(/\s+/g,'')))return false;
       const sizes=[...title.matchAll(/\b(64|128|256|512|1024)\s*(gb|tb)\b/g)].map(m=>m[1]+m[2]);
       if(wantedCapacity&&!sizes.includes(wantedCapacity[1]+wantedCapacity[2]))return false;
       if(wantedCapacity&&sizes.some(v=>v!==wantedCapacity[1]+wantedCapacity[2]))return false;
