@@ -746,14 +746,17 @@ window.__dtSearchOffers=searchInternalOffers;
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
       const verifiedUrl=(raw)=>{
        try{
-        const u=new URL(String(raw||'')),h=u.hostname.toLowerCase(),p=u.pathname.toLowerCase(),m=String(offer.merchant||'').toLowerCase();
+        const u=new URL(String(raw||'')),h=u.hostname.toLowerCase(),p=u.pathname.toLowerCase(),m=String(offer.merchant||'').normalize('NFD').toLowerCase();
         if(u.protocol!=='https:'||u.username||u.password||u.port)return null;
+        const blocked=['google.','bing.','gstatic.','googleusercontent.','youtube.','facebook.','instagram.'];
+        if(blocked.some(x=>h===x.slice(0,-1)||h.includes('.'+x)))return null;
+        if(p.length<5||['/search','/busca','/categoria','/ofertas','/shopping'].some(x=>p===x||p.startsWith(x+'/')))return null;
         const allowed=(m.includes('amazon')&&(h==='amazon.com.br'||h==='www.amazon.com.br')&&p.includes('/dp/'))||
          ((m.includes('magalu')||m.includes('magazine luiza'))&&(h==='magazineluiza.com.br'||h==='www.magazineluiza.com.br')&&p.includes('/p/'))||
          ((m.includes('mercado livre')||m.includes('mercadolivre'))&&(h==='mercadolivre.com.br'||h==='www.mercadolivre.com.br'||h.endsWith('.mercadolivre.com.br'))&&p.includes('mlb'))||
          (m.includes('kabum')&&(h==='kabum.com.br'||h==='www.kabum.com.br')&&p.includes('/produto/'))||
-         (m.includes('shopee')&&(h==='shopee.com.br'||h==='www.shopee.com.br')&&p.includes('-i.'))||
-         (m.includes('casas bahia')&&(h==='casasbahia.com.br'||h==='www.casasbahia.com.br')&&p.includes('/p/'));
+         (m.includes('shopee')&&(h==='shopee.com.br'||h==='www.shopee.com.br')&&(p.includes('-i.')||p.includes('/product/')))||
+         (['merchant_exact_product','matched_product_page'].includes(String(offer.linkFrom||''))&&m.replace(/[^a-z0-9]/g,'').split(' ').length>0&&m.split(' ').filter(x=>x.length>=5).some(x=>h.replace(/[^a-z0-9]/g,'').includes(x)));
         return allowed?u.href:null;
        }catch{return null}
       };
