@@ -1283,7 +1283,12 @@ setTimeout(async()=>{
   console.log("dt_serpapi_one_shot_structure",JSON.stringify({productKeys:Object.keys(pr).slice(0,45),
    productTypes:Object.fromEntries(Object.entries(pr).slice(0,40).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
    sellersKeys:Object.keys(details.sellers_results||{}).slice(0,20),
-   storesSample:(Array.isArray(pr.stores)?pr.stores:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()})),
+   storesSample:(Array.isArray(pr.stores)?pr.stores:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,
+    title:String(x.title||"").slice(0,130),price:x.extracted_price||x.price||null,
+    classification:classifySerper("Samsung Galaxy A56 256GB",x.title||first.title),
+    acceptedURL:Boolean(serpApiDirectLink(x.link,x.name)),
+    acceptedOffer:Boolean(serpApiOffer({...x,thumbnail:first.thumbnail},"Samsung Galaxy A56 256GB",new Date().toISOString(),x.name)),
+    linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()})),
    optionsSample:(Array.isArray(pr.more_options)?pr.more_options:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()}))}));
  }catch(e){console.warn("dt_serpapi_one_shot_structure",String(e.message||e).slice(0,110))}
 },11000);
