@@ -749,14 +749,15 @@ window.__dtSearchOffers=searchInternalOffers;
       try{
        const u=new URL(raw),h=u.hostname.toLowerCase(),p=u.pathname;
        const merchant=String(offer.merchant||'').toLowerCase();
-       const productPath=(/amazon/.test(merchant)&&/(^|\\.)amazon\\.com\\.br$/.test(h)&&/\\/(?:dp|gp\\/product)\\/[a-z0-9]{10}/i.test(p))||
-        (/magalu|magazine luiza/.test(merchant)&&/(^|\\.)magazineluiza\\.com\\.br$/.test(h)&&/\\/p\\//.test(p))||
-        (/mercado livre|mercadolivre/.test(merchant)&&/(^|\\.)mercadolivre\\.com\\.br$/.test(h)&&(/MLB-?\\d+/i.test(p)||/\\/p\\/MLB\\d+/i.test(p)))||
-        (/kabum/.test(merchant)&&/(^|\\.)kabum\\.com\\.br$/.test(h)&&/\\/produto\\/\\d+/.test(p));
+       const productPath=(merchant.includes('amazon')&&h.endsWith('amazon.com.br')&&p.includes('/dp/'))||
+        ((merchant.includes('magalu')||merchant.includes('magazine luiza'))&&h.endsWith('magazineluiza.com.br')&&p.includes('/p/'))||
+        ((merchant.includes('mercado livre')||merchant.includes('mercadolivre'))&&h.endsWith('mercadolivre.com.br')&&p.includes('MLB'))||
+        (merchant.includes('kabum')&&h.endsWith('kabum.com.br')&&p.includes('/produto/'));
        if(u.protocol==='https:'&&productPath)direct=u.href;
       }catch{}
+      card.append(name,title,price);
       if(direct){const link=document.createElement('a');link.href=direct;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ver página ↗';link.className='radar-mvp-more';card.append(link)}
-      card.append(name,title,price);host.append(card);
+      host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
