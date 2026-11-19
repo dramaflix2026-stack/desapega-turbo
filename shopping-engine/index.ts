@@ -1395,7 +1395,9 @@ function radarSellerUrl(value,merchant){
 function radarMakeOffer(seller,product,query,observedAt){
  const merchant=String(seller.name||seller.source||seller.merchant||seller.seller||product.source||"").trim();
  const title=String(seller.title||product.title||"").trim();
- const url=radarSellerUrl(seller.link||seller.direct_link||seller.offer_link||seller.url,merchant);
+ const direct=radarSellerUrl(seller.link||seller.direct_link||seller.offer_link||seller.url,merchant);
+ const googlePage=typeof product.product_link==="string"&&/^https:\/\/www\.google\.com(?:\.br)?\/search\?/.test(product.product_link)?product.product_link:null;
+ const url=direct||googlePage;
  const ownPrice=serpApiPrice(seller.extracted_price)||serpApiPrice(seller.price);
  const price=ownPrice||serpApiPrice(product.extracted_price);
  // The Shopping API may expose installment values for some merchants.
@@ -1403,7 +1405,7 @@ function radarMakeOffer(seller,product,query,observedAt){
  const priceKind=radarPriceKind(price,query,title);
  if(!merchant||!url||!price)return null;
  return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,priceKind,date:observedAt,currency:"BRL",
-  url,linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Product",
+  url,linkFrom:direct?"serpapi_direct_product":"google_shopping_product",status:"review_required",source:"SerpApi / Google Product",
   productId:product.product_id?String(product.product_id).slice(0,100):null,
   image:product.thumbnail||product.image||null};
 }
@@ -1413,7 +1415,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v10-all-shopping|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v11-link-fallback|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
