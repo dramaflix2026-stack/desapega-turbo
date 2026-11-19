@@ -1270,29 +1270,6 @@ async function serpApiAuthDiagnostic(){
  }
 }
 setTimeout(async()=>{
- if(!serpApiReady())return;
- try{
-  const shopping=await serpApiRequest({engine:"google_shopping",q:"Samsung Galaxy A56 256GB",gl:"br",hl:"pt",location:"Brazil",num:10});
-  const first=shopping.shopping_results?.find(x=>x.serpapi_product_api);
-  if(!first)return;
-  const api=new URL(first.serpapi_product_api);
-  const token=api.searchParams.get("page_token");
-  if(!token)return;
-  const details=await serpApiRequest({engine:"google_product",page_token:token,gl:"br",hl:"pt"});
-  const pr=details.product_results||{};
-  console.log("dt_serpapi_one_shot_structure",JSON.stringify({productKeys:Object.keys(pr).slice(0,45),
-   productTypes:Object.fromEntries(Object.entries(pr).slice(0,40).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
-   sellersKeys:Object.keys(details.sellers_results||{}).slice(0,20),
-   storesSample:(Array.isArray(pr.stores)?pr.stores:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,
-    title:String(x.title||"").slice(0,130),price:x.extracted_price||x.price||null,
-    classification:classifySerper("Samsung Galaxy A56 256GB",x.title||first.title),
-    acceptedURL:Boolean(serpApiDirectLink(x.link,x.name)),
-    acceptedOffer:Boolean(serpApiOffer({...x,thumbnail:first.thumbnail},"Samsung Galaxy A56 256GB",new Date().toISOString(),x.name)),
-    linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()})),
-   optionsSample:(Array.isArray(pr.more_options)?pr.more_options:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()}))}));
- }catch(e){console.warn("dt_serpapi_one_shot_structure",String(e.message||e).slice(0,110))}
-},11000);
-setTimeout(async()=>{
  try{
   const response=await serpApiAuthDiagnostic();
   const result=await response.json();
@@ -1352,76 +1329,98 @@ function serpApiOffer(item,query,observedAt,merchantOverride){
   productId:item.product_id?String(item.product_id).slice(0,100):null,
   image:item.thumbnail||item.image||null};
 }
+// Radar v3: isolated SerpApi-only pipeline. No Serper/legacy merchant discovery.
+function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
+function radarMatches(query,title){
+ const q=radarNormalize(query),t=radarNormalize(title);
+ if(!q||!t||/(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|tela|case|kit|combo)/.test(t))return false;
+ const qwords=q.split(" "),twords=t.split(" ");
+ const identifiers=qwords.filter(w=>/[a-z]/.test(w)&&/[0-9]/.test(w));
+ if(identifiers.some(w=>!twords.includes(w)))return false;
+ const capacities=qwords.filter(w=>/^[0-9]+(?:gb|tb)$/.test(w));
+ if(capacities.some(w=>!twords.includes(w)))return false;
+ const important=qwords.filter(w=>w.length>=3&&!/^(com|para|the|and|de|da|do|celular|smartphone|novo)$/.test(w));
+ return important.length?important.filter(w=>twords.includes(w)).length/important.length>=0.75:false;
+}
+function radarSellerUrl(value,merchant){
+ if(typeof value!=="string")return null;
+ try{
+  const u=new URL(value);
+  if(u.protocol!=="https:"||u.username||u.password||u.port)return null;
+  const host=u.hostname.toLowerCase();
+  if(!safeMerchantLink(u.href)||/^(?:www\\.)?google\\./.test(host))return null;
+  const store=directLocatorStore(merchant);
+  const domains={shopee:"shopee.com.br",mercadolivre:"mercadolivre.com.br",amazon:"amazon.com.br",
+   magalu:"magazineluiza.com.br",kabum:"kabum.com.br",pichau:"pichau.com.br",
+   terabyte:"terabyteshop.com.br",americanas:"americanas.com.br",lebiscuit:"lebiscuit.com.br"};
+  const domain=domains[store];
+  if(domain?!(host===domain||host.endsWith("."+domain)):
+    !(String(store).startsWith("generic-")&&genericMerchantHostMatches(u.href,store)))return null;
+  if(u.pathname.length<5||["/","/search","/busca","/catalogo","/category","/categoria","/ofertas","/loja","/shop"].some(p=>u.pathname===p||u.pathname.startsWith(p+"/")))return null;
+  u.hash="";
+  return u.href;
+ }catch{return null}
+}
+function radarMakeOffer(seller,product,query,observedAt){
+ const merchant=String(seller.name||seller.source||seller.merchant||seller.seller||product.source||"").trim();
+ const title=String(seller.title||product.title||"").trim();
+ const url=radarSellerUrl(seller.link||seller.direct_link||seller.offer_link||seller.url,merchant);
+ const price=serpApiPrice(seller.extracted_price)||serpApiPrice(seller.price)||serpApiPrice(product.extracted_price);
+ if(!merchant||!url||!price||!radarMatches(query,title))return null;
+ return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,date:observedAt,currency:"BRL",
+  url,linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Product",
+  productId:product.product_id?String(product.product_id).slice(0,100):null,
+  image:product.thumbnail||product.image||null};
+}
 async function serpApiProductSearch(query,storeId){
  if(!serpApiReady())return safeJson({error:"serpapi_not_configured"},503);
  const v=validateUniversalQuery(query);
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const key=v.key+"|"+(storeId||"all");
- const cached=serpApiCache.get(key);
+ const cacheKey="v3|"+v.key+"|"+(storeId||"all");
+ const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
  try{
-  const result=await serpApiRequest({engine:"google_shopping",q:v.q,gl:"br",hl:"pt",location:"Brazil",num:40});
-  const raw=Array.isArray(result.shopping_results)?result.shopping_results:[];
+  const shopping=await serpApiRequest({engine:"google_shopping",q:v.q,gl:"br",hl:"pt",location:"Brazil",num:40});
+  const raw=Array.isArray(shopping.shopping_results)?shopping.shopping_results:[];
+  const matching=raw.filter(x=>radarMatches(v.q,x.title));
   const found=[];
-  console.log("dt_serpapi_shopping_shape",JSON.stringify({raw:raw.length,
-   sample:raw.slice(0,3).map(x=>({keys:Object.keys(x).filter(k=>!/token|key|api/i.test(k)).slice(0,25),
-    source:String(x.source||"").slice(0,55),hasProductApi:Boolean(x.serpapi_product_api),
-    hasImmersiveApi:Boolean(x.serpapi_immersive_product_api),
-    linkHost:(()=>{try{return new URL(x.link||x.product_link||"").hostname}catch{return null}})()}))}));
-  for(const item of raw){
-   const offer=serpApiOffer(item,v.q,observedAt);
+  for(const product of matching){
+   const offer=radarMakeOffer({...product,name:product.source},product,v.q,observedAt);
    if(offer)found.push(offer);
   }
-  // SerpApi Shopping returns an opaque Google Product page_token, NOT a usable product_id.
-  // Avoid the former invalid product_id requests and cap detail calls to protect free quota.
-  const expandable=raw.filter(x=>x.serpapi_product_api&&!serpApiDirectLink(x.link,x.source)).slice(0,2);
-  for(const item of expandable){
+  // Only fetch detail pages for matching products; avoid burning credits on unrelated listings.
+  const detailCandidates=matching.filter(x=>x.serpapi_product_api).slice(0,6);
+  let detailCalls=0,storeRows=0;
+  for(const product of detailCandidates){
    try{
-    const productApi=new URL(item.serpapi_product_api);
-    if(productApi.hostname!=="serpapi.com"||productApi.searchParams.get("engine")!=="google_product")continue;
-    const pageToken=productApi.searchParams.get("page_token");
+    const api=new URL(product.serpapi_product_api);
+    if(api.hostname!=="serpapi.com"||api.searchParams.get("engine")!=="google_product")continue;
+    const pageToken=api.searchParams.get("page_token");
     if(!pageToken)continue;
+    detailCalls++;
     const details=await serpApiRequest({engine:"google_product",page_token:pageToken,gl:"br",hl:"pt"});
-    const product=details.product_results||{};
-    const sellers=[...(Array.isArray(product.stores)?product.stores:[]),
-      ...(Array.isArray(details.sellers_results?.online_sellers)?details.sellers_results.online_sellers:[]),
-      ...(Array.isArray(details.sellers_results?.sellers)?details.sellers_results.sellers:[]),
-      ...(Array.isArray(details.online_sellers)?details.online_sellers:[]),
-      ...(Array.isArray(details.prices)?details.prices:[])];
-    for(const seller of sellers){
-     if(seller.link){
-      let shape={merchant:String(seller.name||"").slice(0,50),priceType:typeof seller.extracted_price,accepted:Boolean(serpApiDirectLink(seller.link,seller.name))};
-      try{const u=new URL(seller.link);shape.host=u.hostname;shape.pathShape=u.pathname.replace(/\\d+/g,"#").slice(0,160);shape.hasQuery=Boolean(u.search)}catch{}
-      console.log("dt_serpapi_store_link_diagnostic",JSON.stringify(shape));
-     }
-     const candidate=serpApiOffer({...seller,title:seller.title||item.title,thumbnail:item.thumbnail,
-       extracted_price:seller.extracted_price||seller.price||item.extracted_price},v.q,observedAt,
-       seller.name||seller.source||seller.merchant);
-     if(candidate)found.push(candidate);
+    const stores=Array.isArray(details.product_results?.stores)?details.product_results.stores:[];
+    storeRows+=stores.length;
+    for(const seller of stores){
+     const offer=radarMakeOffer(seller,product,v.q,observedAt);
+     if(offer)found.push(offer);
     }
-    console.log("dt_serpapi_details_shape",JSON.stringify({keys:Object.keys(details).filter(k=>!/token|key/i.test(k)).slice(0,35),
-      sellerResultsKeys:Object.keys(details.sellers_results||{}).slice(0,20),
-      productResultKeys:Object.keys(details.product_results||{}).slice(0,45),
-      productResultTypes:Object.fromEntries(Object.entries(details.product_results||{}).filter(([k])=>!/token|key/i.test(k)).slice(0,30).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
-      productSellerKeys:Object.keys(details.product_results?.sellers||details.product_results?.offers||{}).slice(0,20),
-      samplePriceKeys:Array.isArray(details.prices)&&details.prices[0]?Object.keys(details.prices[0]).slice(0,20):[]}));
-    console.log("dt_serpapi_product_details",JSON.stringify({sellers:sellers.length,direct:found.length,
-      sellerKeys:sellers[0]?Object.keys(sellers[0]).filter(k=>!/token|key/i.test(k)).slice(0,16):[]}));
-   }catch(error){console.warn("dt_serpapi_product_expansion",String(error.message||error).slice(0,90))}
+   }catch(error){console.warn("dt_radar_v3_detail_error",String(error.message||error).slice(0,90))}
   }
   const offers=[...new Map(found.filter(x=>!conf||conf.store.test(x.merchant)).map(x=>[x.url,x])).values()]
    .sort((a,b)=>a.price-b.price).slice(0,30);
   const data={query:v.q,status:"ready",cached:false,checkedAt:observedAt,rawCount:raw.length,
    offers,source:"serpapi_google_shopping",directLinksOnly:true,store:conf?.label||null};
-  serpApiCache.set(key,{expires:Date.now()+10*60*1000,data});
+  serpApiCache.set(cacheKey,{expires:Date.now()+10*60*1000,data});
   if(serpApiCache.size>100)serpApiCache.delete(serpApiCache.keys().next().value);
-  console.log("dt_serpapi_radar",JSON.stringify({query:v.key,raw:raw.length,direct:offers.length,store:storeId||"all"}));
+  console.log("dt_radar_v3",JSON.stringify({query:v.key,raw:raw.length,matching:matching.length,
+   detailCalls,storeRows,direct:offers.length,store:storeId||"all"}));
   return safeJson(data);
  }catch(error){
-  console.error("dt_serpapi_radar_error",String(error.message||error).slice(0,110));
+  console.error("dt_radar_v3_error",String(error.message||error).slice(0,110));
   return safeJson({error:"serpapi_search_unavailable",status:"failed"},503);
  }
 }
@@ -1471,12 +1470,12 @@ if(u.pathname==="/on-demand/store-offers"&&req.method==="POST"){
  if(!Bun.env.RADAR_INTERNAL_SEARCH_TOKEN||req.headers.get("x-radar-internal-token")!==Bun.env.RADAR_INTERNAL_SEARCH_TOKEN)return safeJson({error:"restricted"},403);
  if(Number(req.headers.get("content-length")||0)>3000)return safeJson({error:"request_too_large"},413);
  const input=await req.json().catch(()=>null);
- return serpApiReady()?serpApiProductSearch(input?.q,input?.store):universalMerchantSearch(input?.q,input?.store);
+ return serpApiProductSearch(input?.q,input?.store);
 }
 if(u.pathname==="/on-demand/search"&&req.method==="POST"){
   if(!Bun.env.RADAR_INTERNAL_SEARCH_TOKEN||req.headers.get("x-radar-internal-token")!==Bun.env.RADAR_INTERNAL_SEARCH_TOKEN)return safeJson({error:"restricted"},403);
   const body=await req.json().catch(()=>null);
-  return serpApiReady()?serpApiProductSearch(body?.q):universalProductSearch(body?.q);
+  return serpApiProductSearch(body?.q);
 }
 
 if(u.pathname==="/meli/status"&&req.method==="GET"){const linked=await meliStoredCredentials().then(Boolean).catch(()=>false);return safeJson({provider:"mercadolivre_official_api",credentialsConfigured:meliOAuthReady(),accountLinked:linked,mode:"manual_only",apiAccessVerified:false,automaticEnabled:false});}
