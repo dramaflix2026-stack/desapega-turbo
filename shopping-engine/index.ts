@@ -1365,6 +1365,11 @@ async function serpApiProductSearch(query,storeId){
       ...(Array.isArray(details.online_sellers)?details.online_sellers:[]),
       ...(Array.isArray(details.prices)?details.prices:[])];
     for(const seller of sellers){
+     if(seller.link){
+      let shape={merchant:String(seller.name||"").slice(0,50),priceType:typeof seller.extracted_price,accepted:Boolean(serpApiDirectLink(seller.link,seller.name))};
+      try{const u=new URL(seller.link);shape.host=u.hostname;shape.pathShape=u.pathname.replace(/\\d+/g,"#").slice(0,160);shape.hasQuery=Boolean(u.search)}catch{}
+      console.log("dt_serpapi_store_link_diagnostic",JSON.stringify(shape));
+     }
      const candidate=serpApiOffer({...seller,title:seller.title||item.title,thumbnail:item.thumbnail,
        extracted_price:seller.extracted_price||seller.price||item.extracted_price},v.q,observedAt,
        seller.name||seller.source||seller.merchant);
