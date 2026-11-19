@@ -1269,6 +1269,13 @@ async function serpApiAuthDiagnostic(){
   return safeJson({provider:"serpapi",status:"network_error",shape,error:String(error.message||error).slice(0,90)},503);
  }
 }
+setTimeout(async()=>{
+ try{
+  const response=await serpApiAuthDiagnostic();
+  const result=await response.json();
+  console.log("dt_serpapi_auth_diagnostic",JSON.stringify(result));
+ }catch(error){console.warn("dt_serpapi_auth_diagnostic",JSON.stringify({status:"failed",reason:String(error.message||error).slice(0,90)}))}
+},6000);
 async function serpApiRequest(params){
  const url=new URL("https://serpapi.com/search.json");
  for(const [key,value] of Object.entries(params))if(value!==undefined&&value!==null)url.searchParams.set(key,String(value));
