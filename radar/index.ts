@@ -712,6 +712,8 @@ $('dtRadarRefresh').onclick=dtRadarLoad;
 
 const params=new URLSearchParams(location.search);if(params.get('embedded')==='1')document.body.classList.add('embedded');const tab=params.get('tab'),item=params.get('item');if(item){$('usedSearch').value=item;dtSelectActiveProduct(item)}else if(dtActiveProduct){dtSelectActiveProduct(dtActiveProduct,{persist:false})}renderHistory();if(['precificar','ofertas','historico','alertas'].includes(tab||'')){const button=document.querySelector('nav button[data-tab="'+tab+'"]');if(button)button.click()}
 window.__dtRadarBoot=true;
+window.__dtRunOfferSearch=()=>{if(typeof window.__dtSearchOffers==='function')return window.__dtSearchOffers();const status=document.getElementById('dtOfferSearchStatus');if(status)status.textContent='O mecanismo de pesquisa não foi exposto pelo script principal. Verificando inicialização.';};
+window.__dtSearchOffers=searchInternalOffers;
 </script><script>
 (function(){
  const byId=id=>document.getElementById(id);
