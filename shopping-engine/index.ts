@@ -1282,7 +1282,9 @@ setTimeout(async()=>{
   const pr=details.product_results||{};
   console.log("dt_serpapi_one_shot_structure",JSON.stringify({productKeys:Object.keys(pr).slice(0,45),
    productTypes:Object.fromEntries(Object.entries(pr).slice(0,40).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
-   sellersKeys:Object.keys(details.sellers_results||{}).slice(0,20)}));
+   sellersKeys:Object.keys(details.sellers_results||{}).slice(0,20),
+   storesSample:(Array.isArray(pr.stores)?pr.stores:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()})),
+   optionsSample:(Array.isArray(pr.more_options)?pr.more_options:[]).slice(0,2).map(x=>({keys:Object.keys(x),name:x.name||x.source||null,linkHost:(()=>{try{return new URL(x.link||x.url||"").hostname}catch{return null}})()}))}));
  }catch(e){console.warn("dt_serpapi_one_shot_structure",String(e.message||e).slice(0,110))}
 },11000);
 setTimeout(async()=>{
