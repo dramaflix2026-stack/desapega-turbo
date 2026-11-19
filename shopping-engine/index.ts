@@ -1326,7 +1326,7 @@ function serpApiDirectLink(value,merchant){
   const hostMatches=allowed?allowed.some(d=>host===d||host.endsWith("."+d)):
    String(store||"").startsWith("generic-")&&genericMerchantHostMatches(u.href,store);
   if(!hostMatches||!safeMerchantLink(u.href))return null;
-  if(u.pathname.length<5||/^\\/(?:search|busca|s|catalogo|category|categoria|departamento|ofertas|promocoes|carrinho|login|loja|shop|seller|store|stores)(?:\\/|$)/i.test(u.pathname))return null;
+  if(u.pathname.length<5||new RegExp("^/(?:search|busca|s|catalogo|category|categoria|departamento|ofertas|promocoes|carrinho|login|loja|shop|seller|store|stores)(?:/|$)","i").test(u.pathname))return null;
   u.hash="";
   return u.href;
  }catch{return null}
