@@ -773,7 +773,18 @@ window.__dtSearchOffers=searchInternalOffers;
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
-      const price=document.createElement('b');price.textContent=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
+      const price=document.createElement('b');
+      const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
+      const suspected=offer.priceKind==='possible_installment'||
+       (/mercado livre|mercadolivre|havan/i.test(String(offer.merchant||''))&&
+        /galaxy|smartphone|celular|iphone/i.test(String(offer.title||''))&&Number(offer.price)<500);
+      if(suspected){
+       price.textContent='Possível parcela: '+money;
+       const notice=document.createElement('small');
+       notice.textContent='Preço total não confirmado — consulte a loja';
+       notice.style.cssText='display:block;font-size:11px;line-height:1.5;font-weight:400;margin-top:5px;color:#805600';
+       price.append(notice);
+      }else price.textContent=money;
       const action=document.createElement('div');action.style.marginTop='12px';
       const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
       action.append(link);card.append(name,title,price,action);host.append(card);
