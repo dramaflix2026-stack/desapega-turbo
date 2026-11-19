@@ -1346,13 +1346,22 @@ function radarProductIdentity(v){
 function radarMatches(query,title){
  const q=radarProductIdentity(query),p=radarProductIdentity(title);
  if(!q.t||!p.t)return false;
- if(/\b(?:capa|capinha|pelicula|usado|seminovo|recondicionado|reformado)\b/.test(p.t))return false;
+ if(/\b(?:capa|capinha|pelicula|usado|seminovo|recondicionado|reformado)\b/.test(p.t)||/\b(?:como novo|vitrine|open box|openbox)\b/.test(p.t))return false;
  if(q.iphone&&p.iphone!==q.iphone)return false;
  if(q.galaxy&&p.galaxy!==q.galaxy)return false;
  if(q.ps5&&!p.ps5)return false;
  if(q.tv&&!p.tv)return false;
  if(q.inches&&p.inches&&q.inches!==p.inches)return false;
- if(q.tvCode&&p.tvCode&&q.tvCode!==p.tvCode)return false;
+ if(q.tv&&q.inches&&!p.inches){
+  const modelWithSize=p.t.replace(/\s+/g,"");
+  if(!new RegExp("(?:un|qn|q)"+q.inches+"(?:du|bu|cu|au|u)").test(modelWithSize)&&!new RegExp("\\b"+q.inches+"\\b").test(p.t))return false;
+ }
+ if(q.tvCode){
+  const productTokens=p.t.replace(/\s+/g,"");
+  // Samsung model codes can be prefixed by panel size (UN50DU8000, UN50DU8000GXZD).
+  // Require the requested model segment, not a completely identical retail SKU.
+  if(!productTokens.includes(q.tvCode))return false;
+ }
  if(q.storage.length&&(!q.storage.every(x=>p.storage.includes(x))||p.storage.some(x=>!q.storage.includes(x))))return false;
  if(q.ps5&&/\b(?:digital|sem leitor)\b/.test(q.t)!==/\b(?:digital|sem leitor)\b/.test(p.t)&&/\b(?:digital|sem leitor)\b/.test(p.t))return false;
  const important=q.t.split(" ").filter(w=>w.length>=3&&!/^(com|para|the|and|celular|smartphone|novo|apple|samsung|sony|smart|crystal|uhd)$/.test(w));
@@ -1404,7 +1413,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v8-identity|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v9-tv-sku|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
