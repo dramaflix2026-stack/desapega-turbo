@@ -716,6 +716,53 @@ window.__dtRunOfferSearch=()=>{if(typeof window.__dtSearchOffers==='function')re
 window.__dtSearchOffers=searchInternalOffers;
 </script><script>
 (function(){
+ // Independent history bootstrap: survives failure of the larger Radar application script.
+ const byId=id=>document.getElementById(id),select=byId('histSelect'),status=byId('dtAutoHistoryStatus'),chart=byId('priceChart'),rows=byId('histRows');
+ if(!select||!status||!chart)return;
+ const currency=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
+ let loaded='',busy=false;
+ function product(){
+  let q='';
+  try{q=sessionStorage.getItem('radar_active_product')||''}catch{}
+  return q.trim()||String(byId('search')?.value||'').trim();
+ }
+ function paint(data){
+  chart.replaceChildren();rows?.replaceChildren();
+  const days=Array.isArray(data.daily)?data.daily:[];
+  const ns='http://www.w3.org/2000/svg',svg=(tag,attrs,content)=>{const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,String(v)));if(content!==undefined)e.textContent=content;chart.append(e);return e};
+  if(!days.length){svg('text',{x:260,y:125,'text-anchor':'middle',fill:'#73856f','font-size':14},'Ainda não há registros deste produto');return}
+  const values=days.map(d=>Number(d.lowest)).filter(Number.isFinite);
+  if(!values.length)return;
+  const lo=Math.min(...values),hi=Math.max(...values),span=Math.max(1,hi-lo),left=65,right=495,top=30,bottom=205;
+  for(let i=0;i<=4;i++){const y=bottom-(bottom-top)*i/4;svg('line',{x1:left,x2:right,y1:y,y2:y,stroke:'#e1ebd9'});svg('text',{x:58,y:y+4,'text-anchor':'end',fill:'#687c68','font-size':11},currency(lo+span*i/4))}
+  const coords=days.map((d,i)=>({x:days.length===1?(left+right)/2:left+(right-left)*i/(days.length-1),y:bottom-(Number(d.lowest)-lo)/span*(bottom-top),d}));
+  if(coords.length>1)svg('polyline',{points:coords.map(p=>p.x+','+p.y).join(' '),fill:'none',stroke:'#78ad42','stroke-width':3,'stroke-linejoin':'round'});
+  coords.forEach(p=>{svg('circle',{cx:p.x,cy:p.y,r:5,fill:'#78ad42'});svg('text',{x:p.x,y:235,'text-anchor':'middle',fill:'#526a50','font-size':10},String(p.d.day||'').slice(5));});
+  if(rows){const info=document.createElement('p');info.textContent=days.length+' dia(s) registrados • menor preço '+currency(lo)+' • última coleta '+String(days.at(-1).day||'');rows.append(info)}
+ }
+ async function refresh(){
+  const q=product();
+  if(q.length<3){if(!select.options.length){select.add(new Option('Pesquise um produto no Radar',''))}status.textContent='Pesquise um produto no Radar para iniciar o histórico.';return}
+  if(busy||loaded===q)return;
+  busy=true;select.replaceChildren(new Option(q,q));select.value=q;status.textContent='Consultando histórico de '+q+'...';
+  try{
+   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),18000);
+   let response;try{response=await fetch('/radar?api=auto-history&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
+   const data=await response.json();if(!response.ok||data.status!=='ready')throw Error('HTTP '+response.status);
+   loaded=q;paint(data);
+   status.textContent=(data.daily||[]).length?'Histórico carregado: '+data.daily.length+' dia(s) com observações.':'Ainda não há observações para este produto.';
+   const summary=byId('dtAutoHistorySummary');if(summary)summary.textContent=(data.daily||[]).length?'Menor preço registrado: '+currency(Math.min(...data.daily.map(d=>Number(d.lowest)))):'Nenhuma observação automática encontrada.';
+  }catch(e){status.textContent='Falha ao carregar histórico ('+(e.name==='AbortError'?'tempo limite':'consulta indisponível')+'). Tente novamente.'}
+  finally{busy=false}
+ }
+ function init(){if(!window.__dtRadarBoot||!select.options.length){refresh()}else if(product().length>=3){setTimeout(()=>{if(!select.options.length||status.textContent.includes('Carregando histórico automático'))refresh()},1500)}}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+ window.addEventListener('pageshow',init);
+ document.querySelectorAll('nav button[data-tab]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.tab==='historico')setTimeout(refresh,150)}));
+ byId('search')?.addEventListener('change',()=>{loaded='';refresh()});
+})();
+</script><script>
+(function(){
  const byId=id=>document.getElementById(id);
  document.addEventListener('click',function(event){
   const tab=event.target.closest('nav button[data-tab]');
