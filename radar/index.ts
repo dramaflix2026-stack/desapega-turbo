@@ -736,7 +736,21 @@ window.__dtRadarBoot=true;
     const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
     const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
     const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-    card.append(name,title,price);host.append(card);
+    const action=document.createElement('button');action.type='button';action.className='btn';action.textContent='Localizar produto direto';action.style.marginTop='12px';
+    const result=document.createElement('div');result.setAttribute('role','status');result.style.marginTop='8px';
+    action.addEventListener('click',async()=>{
+     if(action.disabled)return;action.disabled=true;action.textContent='Localizando...';result.textContent='';
+     try{
+      const locateBase=location.pathname.startsWith('/radar')?'/radar':'/';
+      const rr=await fetch(locateBase+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
+      const found=await rr.json().catch(()=>({}));
+      if(!rr.ok||found.status!=='ready'||found.matchLevel!=='same_variant'||!found.url)throw Error(found.message||found.error||'Não foi encontrada uma página de produto correspondente.');
+      const u=new URL(found.url);const slug=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-');const tokens=slug.split('-').filter(x=>x.length>=4);const hostName=u.hostname.toLowerCase();
+      if(u.protocol!=='https:'||u.username||u.password||u.port||!tokens.some(x=>hostName.replace(/[^a-z0-9]/g,'').includes(x))||u.pathname.length<4||/^\\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\\/|$)/i.test(u.pathname))throw Error('O endereço não passou na validação da loja.');
+      const link=document.createElement('a');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Abrir página do produto ↗';link.className='btn';link.style.display='inline-block';link.style.marginTop='8px';result.replaceChildren(link);action.textContent='Link localizado';
+     }catch(err){result.textContent=String(err.message||err);action.disabled=false;action.textContent='Tentar localizar novamente'}
+    });
+    card.append(name,title,price,action,result);host.append(card);
    }
   }catch(err){status.textContent='Não foi possível concluir a pesquisa: '+String(err.message||err)}
   finally{button.disabled=false}
