@@ -347,8 +347,9 @@ const check=await fetch("https://api.openai.com/v1/responses",{method:"POST",hea
 if(!check.ok)return json(200,{...base,improved:false,improvement_note:"Não foi possível validar a nova nota; o anúncio original foi preservado."});
 const checked:any=await check.json(),checkedRaw=(checked.output||[]).flatMap((o:any)=>o.content||[]).filter((o:any)=>o.type==="output_text").map((o:any)=>o.text||"").join("");
 const reviewed=JSON.parse(checkedRaw),newParts=makeParts(reviewed),newScore=total(newParts);
-if(newScore<=base.score)return json(200,{...base,improved:false,candidate_score:newScore,improvement_note:"A reformulação não superou a nota original na reavaliação. Mantivemos o anúncio anterior."});
-return json(200,{...base,score:newScore,parts:newParts,title:improvedTitle,description:improvedDescription,improved:true,previous_score:base.score,recommendations:Array.isArray(reviewed.recommendations)?reviewed.recommendations.slice(0,4).map((x:any)=>String(x).slice(0,220)):[]});
+const previousScore=Number.isFinite(Number(d.previous_score))&&d.previous_score!==undefined?Math.max(0,Math.min(100,Math.round(Number(d.previous_score)))):base.score;
+if(newScore<=previousScore)return json(200,{...base,score:previousScore,improved:false,candidate_score:newScore,improvement_note:"A reformulação não superou a nota exibida anteriormente. Mantivemos o anúncio anterior."});
+return json(200,{...base,score:newScore,parts:newParts,title:improvedTitle,description:improvedDescription,improved:true,previous_score:previousScore,recommendations:Array.isArray(reviewed.recommendations)?reviewed.recommendations.slice(0,4).map((x:any)=>String(x).slice(0,220)):[]});
 }catch(e){console.warn("dt_review_failed",String(e).slice(0,120));return json(502,{error:"Análise indisponível. Tente novamente."})}
 }
 if(path==="/api/ai/platform-copy"&&req.method==="POST"){
