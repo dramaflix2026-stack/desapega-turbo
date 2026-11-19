@@ -766,28 +766,21 @@ window.__dtSearchOffers=searchInternalOffers;
       }catch{return null}
      };
      const valid=data.offers.filter(o=>Number(o.price)>0).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
-     const requestedStorage=String(q).toLowerCase().match(/(64|128|256|512|1024)\\s*(gb|tb)/);
-     const compatible=item=>{
-      const title=String(item.offer.title||'').toLowerCase();
-      if(/recondicionado|seminovo|usado|galaxy buds|\\+ fone|galaxy fit|combo|kit com/i.test(title))return false;
-      if(!requestedStorage)return true;
-      const sizes=[...title.matchAll(/(64|128|256|512|1024)\\s*(gb|tb)/g)].map(m=>m[1]+m[2]);
-      return sizes.includes(requestedStorage[1]+requestedStorage[2])&&sizes.every(x=>x===requestedStorage[1]+requestedStorage[2]);
-     };
-     const visible=valid.filter(compatible);
-     const other=valid.filter(x=>!compatible(x));
+     // Identity matching is authoritative on the SerpApi engine; do not run a divergent client filter.
+     const visible=valid;
+     const other=[];
      for(const item of visible){
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');
       const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
-      const suspected=offer.priceKind==='possible_installment'||
-       (/galaxy|smartphone|celular|iphone/i.test(String(offer.title||''))&&Number(offer.price)<500);
-      if(suspected){
-       price.textContent='Possível parcela: '+money;
+      const suspected=offer.priceKind==='unverified_low_price'||
+       (/iphone|galaxy|smartphone|celular|playstation|ps5|smart tv|televisão/i.test(String(offer.title||''))&&Number(offer.price)<800);
+            if(suspected){
+       price.textContent='Valor não confirmado: '+money;
        const notice=document.createElement('small');
-       notice.textContent='Preço total não confirmado — consulte a loja';
+       notice.textContent='Pode ser parcela ou condição especial; confira o total na loja';
        notice.style.cssText='display:block;font-size:11px;line-height:1.5;font-weight:400;margin-top:5px;color:#805600';
        price.append(notice);
       }else price.textContent=money;
