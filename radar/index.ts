@@ -744,33 +744,7 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      const actions=document.createElement('div');actions.style.marginTop='12px';
-      const link=document.createElement('a');link.textContent='Ver página ↗';link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
-      const note=document.createElement('small');note.style.display='block';note.textContent='Validando página da loja...';
-      const validate=(raw)=>{
-       try{
-        const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||u.port)return null;
-        const host=u.hostname.toLowerCase(),merchant=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();
-        const known=merchant.includes('amazon')?/^(www\\.)?amazon\\.com\\.br$/.test(host)&&/\\/dp\\/[a-z0-9]{10}/i.test(u.pathname):merchant.includes('magalu')||merchant.includes('magazine luiza')?/^(www\\.)?magazineluiza\\.com\\.br$/.test(host)&&u.pathname.includes('/p/'):merchant.includes('mercado livre')||merchant.includes('mercadolivre')?/mercadolivre\\.com\\.br$/.test(host)&&/MLB-?\\d+/i.test(u.pathname):merchant.includes('kabum')?/kabum\\.com\\.br$/.test(host)&&/\\/produto\\/\\d+/i.test(u.pathname):false;
-        return known?u.href:null;
-       }catch{return null}
-      };
-      const existing=typeof offer.url==='string'?validate(offer.url):null;
-      if(existing){link.href=existing;actions.append(link)}
-      else{
-       actions.append(note);
-       (async()=>{
-        try{
-         const base=location.pathname.startsWith('/radar')?'/radar':'/';
-         const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
-         const d=await r.json().catch(()=>({}));
-         const url=r.ok&&d.status==='ready'&&d.matchLevel==='same_variant'?validate(d.url):null;
-         if(url){link.href=url;actions.replaceChildren(link)}
-         else note.textContent='Página específica não confirmada nesta loja';
-        }catch{note.textContent='Página da loja indisponível no momento'}
-       })();
-      }
-      card.append(name,title,price,actions);host.append(card);
+      card.append(name,title,price);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
