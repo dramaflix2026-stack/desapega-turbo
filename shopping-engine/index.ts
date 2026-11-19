@@ -1396,7 +1396,8 @@ function radarMakeOffer(seller,product,query,observedAt){
  const merchant=String(seller.name||seller.source||seller.merchant||seller.seller||product.source||"").trim();
  const title=String(seller.title||product.title||"").trim();
  const direct=radarSellerUrl(seller.link||seller.direct_link||seller.offer_link||seller.url,merchant);
- const googlePage=typeof product.product_link==="string"&&/^https:\/\/www\.google\.com(?:\.br)?\/search\?/.test(product.product_link)?product.product_link:null;
+ const googlePage=typeof product.product_link==="string"&&/^https:\/\/www\.google\.com(?:\.br)?\/search\?/.test(product.product_link)?product.product_link:
+  "https://www.google.com.br/search?udm=28&hl=pt&gl=br&q="+encodeURIComponent(title);
  const url=direct||googlePage;
  const ownPrice=serpApiPrice(seller.extracted_price)||serpApiPrice(seller.price);
  const price=ownPrice||serpApiPrice(product.extracted_price);
@@ -1415,7 +1416,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v11-link-fallback|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v12-link-dedup|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
@@ -1456,8 +1457,15 @@ async function serpApiProductSearch(query,storeId){
     }
    }catch(error){console.warn("dt_radar_v3_detail_error",String(error.message||error).slice(0,90))}
   }
-  const seen=new Set(found.filter(x=>x.linkFrom==="serpapi_direct_product").map(x=>x.url));
-  const supplemental=extra.filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true});
+  // Keep each raw Shopping result. Do not append a duplicate store row when
+  // it only repeats the same product's Google Shopping page.
+  const rawUrls=new Set(found.map(x=>x.url).filter(Boolean));
+  const seenDirect=new Set();
+  const supplemental=extra.filter(x=>{
+   if(x.linkFrom!=="serpapi_direct_product"||!x.url||rawUrls.has(x.url)||seenDirect.has(x.url))return false;
+   seenDirect.add(x.url);
+   return true;
+  });
   const offers=[...found,...supplemental].filter(x=>!conf||conf.store.test(x.merchant));
   const matching=raw;
   const data={query:v.q,status:"ready",cached:false,checkedAt:observedAt,rawCount:raw.length,
