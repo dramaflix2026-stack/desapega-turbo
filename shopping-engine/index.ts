@@ -1307,7 +1307,29 @@ function serpApiDirectLink(value,merchant){
  if(typeof value!=="string")return null;
  const store=directLocatorStore(merchant);
  const direct=directLocatorURL(value,store);
- return direct&&safeMerchantLink(direct)?direct:null;
+ if(direct&&safeMerchantLink(direct))return direct;
+ // SerpApi often returns real store product URLs in formats not covered by
+ // our narrow per-store regexes. Preserve these URLs, but never Google links,
+ // search/category pages, homepage links or unrelated merchant domains.
+ try{
+  const u=new URL(value);
+  if(u.protocol!=="https:"||u.username||u.password||u.port)return null;
+  const host=u.hostname.toLowerCase();
+  const knownHosts={
+   shopee:["shopee.com.br"],mercadolivre:["mercadolivre.com.br"],
+   amazon:["amazon.com.br"],magalu:["magazineluiza.com.br"],
+   kabum:["kabum.com.br"],pichau:["pichau.com.br"],
+   terabyte:["terabyteshop.com.br"],americanas:["americanas.com.br"],
+   lebiscuit:["lebiscuit.com.br"]
+  };
+  const allowed=knownHosts[store];
+  const hostMatches=allowed?allowed.some(d=>host===d||host.endsWith("."+d)):
+   String(store||"").startsWith("generic-")&&genericMerchantHostMatches(u.href,store);
+  if(!hostMatches||!safeMerchantLink(u.href))return null;
+  if(u.pathname.length<5||/^\\/(?:search|busca|s|catalogo|category|categoria|departamento|ofertas|promocoes|carrinho|login|loja|shop|seller|store|stores)(?:\\/|$)/i.test(u.pathname))return null;
+  u.hash="";
+  return u.href;
+ }catch{return null}
 }
 function serpApiPrice(value){
  if(typeof value==="number")return Number.isFinite(value)&&value>0?value:null;
