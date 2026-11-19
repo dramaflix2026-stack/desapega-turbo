@@ -740,6 +740,8 @@ window.__dtSearchOffers=searchInternalOffers;
      if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
      status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
      let linkQuotaReached=false;
+     let verifiedCount=0;
+     const updateCount=()=>{status.textContent=verifiedCount?verifiedCount+' ofertas com link direto confirmado': 'Nenhuma oferta com link direto confirmado nesta pesquisa';};
      let linkQueue=Promise.resolve();
      for(const offer of data.offers){
       const card=document.createElement('article');card.className='radar-offer';
@@ -762,32 +764,33 @@ window.__dtSearchOffers=searchInternalOffers;
         return allowed?u.href:null;
        }catch{return null}
       };
+      card.hidden=true;
       card.append(name,title,price);
       const action=document.createElement('div');action.style.marginTop='12px';
       const link=document.createElement('a');link.textContent='Ver página ↗';link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
       const note=document.createElement('small');note.textContent='Buscando anúncio exato...';
-      const show=(url)=>{link.href=url;action.replaceChildren(link)};
+      const show=(url)=>{link.href=url;action.replaceChildren(link);card.hidden=false;verifiedCount++;updateCount()};
       const existing=verifiedUrl(offer.url);
       if(existing)show(existing);
       else{
        action.append(note);
        linkQueue=linkQueue.then(async()=>{
-        if(linkQuotaReached){note.textContent='Limite de consultas de links atingido';return}
+        if(linkQuotaReached){updateCount();return}
         try{
          const base=location.pathname.startsWith('/radar')?'/radar':'/';
          const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
          const data=await r.json().catch(()=>({}));
-         if(r.status===429){linkQuotaReached=true;note.textContent='Limite de consultas de links atingido';return}
-         if(!r.ok){note.textContent='Serviço de links indisponível';return}
+         if(r.status===429){linkQuotaReached=true;updateCount();return}
+         if(!r.ok){updateCount();return}
          const url=data.status==='ready'&&data.matchLevel==='same_variant'?verifiedUrl(data.url):null;
-         if(url)show(url);else if(data.status==='daily_limit'||data.status==='monthly_limit'){linkQuotaReached=true;note.textContent='Limite de consultas de links atingido'}
-         else note.textContent='Anúncio exato não confirmado';
-        }catch{note.textContent='Link direto indisponível'}
+         if(url)show(url);else if(data.status==='daily_limit'||data.status==='monthly_limit'){linkQuotaReached=true;updateCount()}
+        }catch{updateCount()}
        });
       }
       card.append(action);
       host.append(card);
      }
+     updateCount();
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
    })();
