@@ -744,6 +744,14 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
+      const direct=typeof offer.url==='string'&&offer.url.startsWith('https://')?offer.url:null;
+      if(direct){
+       try{
+        const u=new URL(direct),h=u.hostname.toLowerCase(),p=u.pathname;
+        const exact=!/(^|\\.)google\\./i.test(h)&&!/(^|\\.)bing\\./i.test(h)&&!/(^|\\.)serper\\./i.test(h)&&!/^\\/(search|busca|s|shopping|categoria)(\\/|$)/i.test(p)&&p.length>8;
+        if(exact){const a=document.createElement('a');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Ver página ↗';a.className='radar-mvp-more';card.append(a)}
+       }catch{}
+      }
       card.append(name,title,price);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
