@@ -1054,8 +1054,13 @@ async function autoHistoryData(query){
  const key=organicKey(query);
  if(key.length<3||key.length>140)return {status:"invalid",daily:[],latest:[]};
  let inserted=0;
- try{inserted=await historyPersistPoints(query)}catch(e){console.log("dt_auto_history_ingest",JSON.stringify({query:key,error:String(e?.message||e).slice(0,90)}))}
- const points=await organicDb("GET","dt_radar_auto_price_points",null,"?select=merchant,product_title,price,observed_day,observed_at,source,product_url&query_key=eq."+encodeURIComponent(key)+"&order=observed_day.asc&limit=1000");
+ const select="?select=merchant,product_title,price,observed_day,observed_at,source,product_url&query_key=eq."+encodeURIComponent(key)+"&order=observed_day.asc&limit=1000";
+ let points=await organicDb("GET","dt_radar_auto_price_points",null,select);
+ // Read saved daily snapshots first. Never block an existing chart on multiple cache imports.
+ if(!points.length){
+  try{inserted=await historyPersistPoints(query);points=await organicDb("GET","dt_radar_auto_price_points",null,select)}
+  catch(e){console.log("dt_auto_history_ingest",JSON.stringify({query:key,error:String(e?.message||e).slice(0,90)}))}
+ }
  const valid=points.filter(x=>historyCompatible(x.product_title,query)&&Number(x.price)>0);
  const byDay=new Map(),latest=new Map();
  for(const row of valid){
