@@ -728,15 +728,27 @@ window.__dtSearchOffers=searchInternalOffers;
   }
   const searchButton=event.target.closest('#searchGo');
   if(searchButton){
-   event.preventDefault();
-   if(typeof searchInternalOffers==='function'){
-    Promise.resolve(searchInternalOffers()).catch(error=>{
-     const status=byId('dtOfferSearchStatus');if(status)status.textContent='Erro na pesquisa: '+String(error?.message||error);
-    });
-   }else{
-    const input=byId('search'),status=byId('dtOfferSearchStatus');
-    if(status)status.textContent='O módulo de pesquisa não foi inicializado. Atualize a página e tente novamente.';
-   }
+   event.preventDefault();event.stopImmediatePropagation();
+   const input=byId('search'),host=byId('stores'),status=byId('dtOfferSearchStatus'),q=String(input?.value||'').trim();
+   if(!host||!status||q.length<3){if(status)status.textContent='Digite pelo menos 3 caracteres para pesquisar.';return}
+   searchButton.disabled=true;status.textContent='Consultando ofertas...';host.replaceChildren();
+   (async()=>{
+    try{
+     const base=location.pathname.startsWith('/radar')?'/radar':'/';
+     const response=await fetch(base+'?api=search&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});
+     const data=await response.json();
+     if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
+     status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
+     for(const offer of data.offers){
+      const card=document.createElement('article');card.className='radar-offer';
+      const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
+      const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
+      const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
+      card.append(name,title,price);host.append(card);
+     }
+    }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
+    finally{searchButton.disabled=false}
+   })();
   }
  },true);
  window.addEventListener('error',function(event){
