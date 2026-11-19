@@ -1333,14 +1333,28 @@ function serpApiOffer(item,query,observedAt,merchantOverride){
 function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
 function radarMatches(query,title){
  const q=radarNormalize(query),t=radarNormalize(title);
- if(!q||!t||/(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|tela|case|kit|combo)/.test(t))return false;
- const qwords=q.split(" "),twords=t.split(" ");
- const identifiers=qwords.filter(w=>/[a-z]/.test(w)&&/[0-9]/.test(w));
- if(identifiers.some(w=>!twords.includes(w)))return false;
- const capacities=qwords.filter(w=>/^[0-9]+(?:gb|tb)$/.test(w));
- if(capacities.some(w=>!twords.includes(w)))return false;
- const important=qwords.filter(w=>w.length>=3&&!/^(com|para|the|and|de|da|do|celular|smartphone|novo)$/.test(w));
- return important.length?important.filter(w=>twords.includes(w)).length/important.length>=0.75:false;
+ if(!q||!t)return false;
+ if(/\\b(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|case|kit|combo)\\b/.test(t))return false;
+ const qw=q.split(" "),tw=t.split(" ");
+ const model=qw.filter(w=>/[a-z]/.test(w)&&/[0-9]/.test(w)&&!/^(?:[0-9]+(?:gb|tb|mah|hz))$/.test(w));
+ if(model.some(w=>!tw.includes(w)))return false;
+ // Storage must match, even when the seller uses "256 GB" instead of "256GB".
+ const capacity=(words)=>{const result=[];for(let i=0;i<words.length;i++){
+  const compact=words[i].match(/^([0-9]+)(gb|tb)$/);
+  if(compact)result.push(compact[1]+compact[2]);
+  else if(/^[0-9]+$/.test(words[i])&&/^(?:gb|tb)$/.test(words[i+1]||""))result.push(words[i]+words[i+1]);
+ }return result};
+ const requested=capacity(qw),listed=capacity(tw);
+ if(requested.length&&!requested.every(c=>listed.includes(c)))return false;
+ // Explicit competing storage variants (128 GB vs 256 GB) are incompatible.
+ if(requested.length&&listed.some(c=>!requested.includes(c))){
+  const target=new Set(requested);
+  const other=listed.filter(c=>!target.has(c));
+  // Allow RAM capacities such as 8GB or 12GB alongside the requested storage.
+  if(other.some(c=>parseInt(c,10)>=32||c.endsWith("tb")))return false;
+ }
+ const important=qw.filter(w=>w.length>=3&&!/^(com|para|the|and|celular|smartphone|novo)$/.test(w)&&!/^[0-9]+(?:gb|tb)$/.test(w));
+ return important.length?important.filter(w=>tw.includes(w)).length/important.length>=0.75:requested.length>0;
 }
 function radarSellerUrl(value,merchant){
  if(typeof value!=="string")return null;
@@ -1378,7 +1392,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v3|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v4|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
