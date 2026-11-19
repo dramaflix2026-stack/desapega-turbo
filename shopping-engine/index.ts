@@ -927,7 +927,7 @@ async function findMerchantPageForOffer(title,merchant){
   await supa("PATCH","dt_radar_direct_link_cache",{
    state:chosen?"ready":"missing",link_url:chosen?.url||null,result_title:chosen?.resultTitle||null,
    match_level:chosen?.matchLevel||null,checked_at:now,
-   cache_until:new Date(Date.now()+(chosen?7:1)*86400000).toISOString(),failure_reason:null
+   cache_until:new Date(Date.now()+(chosen?7*86400000:20*60000)).toISOString(),failure_reason:null
   },"?cache_key=eq."+encodeURIComponent(key)+"&run_id=eq."+runId);
   await supa("PATCH","dt_radar_direct_link_runs",{state:"completed",credits_actual:credits,finished_at:now},
    "?id=eq."+runId).catch(()=>{});
