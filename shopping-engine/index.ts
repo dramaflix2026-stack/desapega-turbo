@@ -1245,6 +1245,88 @@ async function meliOAuthCallback(req,url){
  }
 }
 
+
+/* SerpApi Radar MVP: direct product pages only; never substitute Google Shopping URLs. */
+const serpApiReady=()=>Boolean(Bun.env.SERPAPI_API_KEY);
+const serpApiCache=new Map();
+async function serpApiRequest(params){
+ const url=new URL("https://serpapi.com/search.json");
+ for(const [key,value] of Object.entries(params))if(value!==undefined&&value!==null)url.searchParams.set(key,String(value));
+ url.searchParams.set("api_key",Bun.env.SERPAPI_API_KEY);
+ const response=await fetch(url,{signal:AbortSignal.timeout(30000)});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok||data.error)throw Error("serpapi_"+response.status+":"+String(data.error||"request_failed").slice(0,90));
+ return data;
+}
+function serpApiDirectLink(value,merchant){
+ if(typeof value!=="string")return null;
+ const store=directLocatorStore(merchant);
+ const direct=directLocatorURL(value,store);
+ return direct&&safeMerchantLink(direct)?direct:null;
+}
+function serpApiPrice(value){
+ if(typeof value==="number")return Number.isFinite(value)&&value>0?value:null;
+ return parseBRL(value)||null;
+}
+function serpApiOffer(item,query,observedAt,merchantOverride){
+ const merchant=String(merchantOverride||item.source||item.name||item.merchant||item.seller||"Loja").trim();
+ const title=String(item.title||item.product_title||query||"").trim();
+ const price=serpApiPrice(item.extracted_price)||serpApiPrice(item.price)||serpApiPrice(item.base_price);
+ if(!title||!price||classifySerper(query,title)==="mismatch"||/\busado\b|seminovo|recondicionado|pelicula|capa para/i.test(title))return null;
+ const url=[item.link,item.direct_link,item.offer_link,item.url].map(link=>serpApiDirectLink(link,merchant)).find(Boolean);
+ if(!url)return null;
+ return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,date:observedAt,currency:"BRL",url,
+  linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Shopping",
+  productId:item.product_id?String(item.product_id).slice(0,100):null,
+  image:item.thumbnail||item.image||null};
+}
+async function serpApiProductSearch(query,storeId){
+ if(!serpApiReady())return safeJson({error:"serpapi_not_configured"},503);
+ const v=validateUniversalQuery(query);
+ if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
+ const conf=storeId?radarMerchantStores[String(storeId)]:null;
+ if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
+ const key=v.key+"|"+(storeId||"all");
+ const cached=serpApiCache.get(key);
+ if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
+ const observedAt=new Date().toISOString();
+ try{
+  const result=await serpApiRequest({engine:"google_shopping",q:v.q,gl:"br",hl:"pt",location:"Brazil",num:40});
+  const raw=Array.isArray(result.shopping_results)?result.shopping_results:[];
+  const found=[];
+  for(const item of raw){
+   const offer=serpApiOffer(item,v.q,observedAt);
+   if(offer)found.push(offer);
+  }
+  // Google Product API exposes seller offers for Shopping results whose product links point to Google.
+  // Limit expansion to three products per request to bound SerpApi credits.
+  const expandable=raw.filter(x=>x.product_id&&!serpApiDirectLink(x.link,x.source)).slice(0,3);
+  for(const item of expandable){
+   try{
+    const details=await serpApiRequest({engine:"google_product",product_id:item.product_id,gl:"br",hl:"pt",offers:"1"});
+    const sellers=details.sellers_results?.online_sellers||details.sellers_results?.sellers||details.online_sellers||[];
+    for(const seller of Array.isArray(sellers)?sellers:[]){
+     const candidate=serpApiOffer({...seller,title:item.title,thumbnail:item.thumbnail,
+       extracted_price:seller.extracted_price||seller.price||item.extracted_price},v.q,observedAt,
+       seller.name||seller.source||seller.merchant);
+     if(candidate)found.push(candidate);
+    }
+   }catch(error){console.warn("dt_serpapi_product_expansion",String(error.message||error).slice(0,90))}
+  }
+  const offers=[...new Map(found.filter(x=>!conf||conf.store.test(x.merchant)).map(x=>[x.url,x])).values()]
+   .sort((a,b)=>a.price-b.price).slice(0,30);
+  const data={query:v.q,status:"ready",cached:false,checkedAt:observedAt,rawCount:raw.length,
+   offers,source:"serpapi_google_shopping",directLinksOnly:true,store:conf?.label||null};
+  serpApiCache.set(key,{expires:Date.now()+10*60*1000,data});
+  if(serpApiCache.size>100)serpApiCache.delete(serpApiCache.keys().next().value);
+  console.log("dt_serpapi_radar",JSON.stringify({query:v.key,raw:raw.length,direct:offers.length,store:storeId||"all"}));
+  return safeJson(data);
+ }catch(error){
+  console.error("dt_serpapi_radar_error",String(error.message||error).slice(0,110));
+  return safeJson({error:"serpapi_search_unavailable",status:"failed"},503);
+ }
+}
+
 Bun.serve({port:Number(Bun.env.PORT||3000),async fetch(req){const u=new URL(req.url);try{
 if(u.pathname==="/health")return safeJson({ok:true,service:"desapega-google-poc"});
 if(u.pathname==="/oauth/mercadolivre/callback")return meliOAuthCallback(req,u);
@@ -1290,16 +1372,17 @@ if(u.pathname==="/on-demand/store-offers"&&req.method==="POST"){
  if(!Bun.env.RADAR_INTERNAL_SEARCH_TOKEN||req.headers.get("x-radar-internal-token")!==Bun.env.RADAR_INTERNAL_SEARCH_TOKEN)return safeJson({error:"restricted"},403);
  if(Number(req.headers.get("content-length")||0)>3000)return safeJson({error:"request_too_large"},413);
  const input=await req.json().catch(()=>null);
- return universalMerchantSearch(input?.q,input?.store);
+ return serpApiReady()?serpApiProductSearch(input?.q,input?.store):universalMerchantSearch(input?.q,input?.store);
 }
 if(u.pathname==="/on-demand/search"&&req.method==="POST"){
   if(!Bun.env.RADAR_INTERNAL_SEARCH_TOKEN||req.headers.get("x-radar-internal-token")!==Bun.env.RADAR_INTERNAL_SEARCH_TOKEN)return safeJson({error:"restricted"},403);
   const body=await req.json().catch(()=>null);
-  return universalProductSearch(body?.q);
+  return serpApiReady()?serpApiProductSearch(body?.q):universalProductSearch(body?.q);
 }
 
 if(u.pathname==="/meli/status"&&req.method==="GET"){const linked=await meliStoredCredentials().then(Boolean).catch(()=>false);return safeJson({provider:"mercadolivre_official_api",credentialsConfigured:meliOAuthReady(),accountLinked:linked,mode:"manual_only",apiAccessVerified:false,automaticEnabled:false});}
 if(u.pathname==="/meli/oauth/setup"&&req.method==="GET")return safeJson({provider:"mercadolivre_oauth",appConfigured:Boolean(Bun.env.MELI_CLIENT_ID),redirectConfigured:Boolean(Bun.env.MELI_REDIRECT_URI),secretConfigured:Boolean(Bun.env.MELI_CLIENT_SECRET),callbackPublished:true,authorizationEnabled:meliOAuthReady(),tokenStorageEnabled:meliOAuthReady(),nextStep:meliOAuthReady()?"authorize_account_at_/meli/connect":"complete_configuration"});
+if(u.pathname==="/serpapi/status"&&req.method==="GET")return safeJson({provider:"serpapi_google_shopping",configured:serpApiReady(),directLinksOnly:true});
 if(u.pathname==="/serper/status"&&req.method==="GET")return safeJson({provider:"serper_google_shopping",configured:serperConfigured(),dailyEnabled:serperEnabled(),creditCap:serperMonthlyCreditCap(),products:queries.length});
 if(u.pathname==="/catalog"&&req.method==="GET")return safeJson({planned:queries.length,products:queries.map(query=>({query,status:"awaiting_real_collection"})),providerConfigured:ok(),databaseConfigured:dbok(),dailySchedulerEnabled:dailyEnabled(),maxMonthlyTasks:maxMonthlyTasks(),pricesFabricated:0});
 if(!authorized(req))return safeJson({error:"restricted"},403);
