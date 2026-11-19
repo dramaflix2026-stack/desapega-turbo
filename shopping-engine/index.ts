@@ -1330,11 +1330,11 @@ function serpApiOffer(item,query,observedAt,merchantOverride){
   image:item.thumbnail||item.image||null};
 }
 // Radar v3: isolated SerpApi-only pipeline. No Serper/legacy merchant discovery.
-function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
+function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
 function radarMatches(query,title){
  const q=radarNormalize(query),t=radarNormalize(title);
  if(!q||!t)return false;
- if(/\b(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|case|kit|combo)\b/.test(t))return false;
+ if(/\\b(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|case|kit|combo)\\b/.test(t))return false;
  const qw=q.split(" "),tw=t.split(" ");
  const model=qw.filter(w=>/[a-z]/.test(w)&&/[0-9]/.test(w)&&!/^(?:[0-9]+(?:gb|tb|mah|hz))$/.test(w));
  if(model.some(w=>!tw.includes(w)))return false;
@@ -1392,7 +1392,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v5|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v6-restore|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
