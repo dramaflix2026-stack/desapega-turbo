@@ -744,6 +744,18 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
+      const raw=typeof offer.url==='string'?offer.url:'';
+      let direct=null;
+      try{
+       const u=new URL(raw),h=u.hostname.toLowerCase(),p=u.pathname;
+       const merchant=String(offer.merchant||'').toLowerCase();
+       const productPath=(/amazon/.test(merchant)&&/(^|\\.)amazon\\.com\\.br$/.test(h)&&/\\/(?:dp|gp\\/product)\\/[a-z0-9]{10}/i.test(p))||
+        (/magalu|magazine luiza/.test(merchant)&&/(^|\\.)magazineluiza\\.com\\.br$/.test(h)&&/\\/p\\//.test(p))||
+        (/mercado livre|mercadolivre/.test(merchant)&&/(^|\\.)mercadolivre\\.com\\.br$/.test(h)&&(/MLB-?\\d+/i.test(p)||/\\/p\\/MLB\\d+/i.test(p)))||
+        (/kabum/.test(merchant)&&/(^|\\.)kabum\\.com\\.br$/.test(h)&&/\\/produto\\/\\d+/.test(p));
+       if(u.protocol==='https:'&&productPath)direct=u.href;
+      }catch{}
+      if(direct){const link=document.createElement('a');link.href=direct;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ver página ↗';link.className='radar-mvp-more';card.append(link)}
       card.append(name,title,price);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
