@@ -556,6 +556,15 @@ if(!wallet.ok||!items.ok)return json(503,{error:"O histórico de anúncios ainda
 const w=await wallet.json(),l=await items.json();return json(200,{email:session.user.email,credits:Number(w?.[0]?.balance||0),items:l||[]});
 }catch{return json(503,{error:"Não foi possível carregar os dados da conta."})}
 }
+if(path==="/radar"&&url.searchParams.has("api")&&["GET","POST"].includes(req.method)){
+ if(!cookie(req,"__Host-dt_at")&&!cookie(req,"__Host-dt_rt"))return json(401,{error:"Acesso nao autorizado"});
+ try{
+  const upstream="https://desapega-turbo-radar-production.up.railway.app/radar"+url.search;
+  const body=req.method==="POST"?await req.text():undefined;
+  const response=await fetch(upstream,{method:req.method,headers:{"content-type":"application/json"},body,signal:AbortSignal.timeout(45000)});
+  return new Response(response.body,{status:response.status,headers:{"content-type":response.headers.get("content-type")||"application/json","cache-control":"no-store","x-content-type-options":"nosniff"}});
+ }catch{return json(503,{error:"Radar API indisponivel"})}
+}
 if(path==="/radar"&&req.method==="GET"){
 if(!cookie(req,"__Host-dt_at")&&!cookie(req,"__Host-dt_rt"))return new Response("Entre na sua conta para acessar o Radar.",{status:401});
 try{const target="https://desapega-turbo-radar-production.up.railway.app/"+url.search;
