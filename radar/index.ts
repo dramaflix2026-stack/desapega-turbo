@@ -109,6 +109,8 @@ async function dtLocateForOffer(button,container,offer){
   container.replaceChildren(note);
  }
 }
+window.__dtLocateOffer=dtLocateForOffer;
+
 function dtOfferCard(offer,query){
  const card=document.createElement('article');card.className='radar-offer radar-mvp-card';
  const store=document.createElement('div');store.className='radar-mvp-store';store.textContent=offer.merchant||'Loja';
@@ -744,7 +746,13 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      card.append(name,title,price);host.append(card);
+      const linkArea=document.createElement('div');linkArea.style.marginTop='12px';
+      const locate=document.createElement('button');locate.type='button';locate.className='radar-mvp-more';locate.textContent='Buscar link da loja ↗';
+      locate.addEventListener('click',()=>{
+       if(typeof window.__dtLocateOffer==='function')window.__dtLocateOffer(locate,linkArea,offer);
+       else{linkArea.textContent='Localizador indisponível nesta sessão. Atualize a página.'}
+      });
+      linkArea.append(locate);card.append(name,title,price,linkArea);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
