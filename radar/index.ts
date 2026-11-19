@@ -744,19 +744,39 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      const raw=typeof offer.url==='string'?offer.url:'';
-      let direct=null;
-      try{
-       const u=new URL(raw),h=u.hostname.toLowerCase(),p=u.pathname;
-       const merchant=String(offer.merchant||'').toLowerCase();
-       const productPath=(merchant.includes('amazon')&&h.endsWith('amazon.com.br')&&p.includes('/dp/'))||
-        ((merchant.includes('magalu')||merchant.includes('magazine luiza'))&&h.endsWith('magazineluiza.com.br')&&p.includes('/p/'))||
-        ((merchant.includes('mercado livre')||merchant.includes('mercadolivre'))&&h.endsWith('mercadolivre.com.br')&&p.includes('MLB'))||
-        (merchant.includes('kabum')&&h.endsWith('kabum.com.br')&&p.includes('/produto/'));
-       if(u.protocol==='https:'&&productPath)direct=u.href;
-      }catch{}
+      const verifiedUrl=(raw)=>{
+       try{
+        const u=new URL(String(raw||'')),h=u.hostname.toLowerCase(),p=u.pathname.toLowerCase(),m=String(offer.merchant||'').toLowerCase();
+        if(u.protocol!=='https:'||u.username||u.password||u.port)return null;
+        const allowed=(m.includes('amazon')&&(h==='amazon.com.br'||h==='www.amazon.com.br')&&p.includes('/dp/'))||
+         ((m.includes('magalu')||m.includes('magazine luiza'))&&(h==='magazineluiza.com.br'||h==='www.magazineluiza.com.br')&&p.includes('/p/'))||
+         ((m.includes('mercado livre')||m.includes('mercadolivre'))&&(h==='mercadolivre.com.br'||h==='www.mercadolivre.com.br'||h.endsWith('.mercadolivre.com.br'))&&p.includes('mlb'))||
+         (m.includes('kabum')&&(h==='kabum.com.br'||h==='www.kabum.com.br')&&p.includes('/produto/'))||
+         (m.includes('shopee')&&(h==='shopee.com.br'||h==='www.shopee.com.br')&&p.includes('-i.'))||
+         (m.includes('casas bahia')&&(h==='casasbahia.com.br'||h==='www.casasbahia.com.br')&&p.includes('/p/'));
+        return allowed?u.href:null;
+       }catch{return null}
+      };
       card.append(name,title,price);
-      if(direct){const link=document.createElement('a');link.href=direct;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ver página ↗';link.className='radar-mvp-more';card.append(link)}
+      const action=document.createElement('div');action.style.marginTop='12px';
+      const link=document.createElement('a');link.textContent='Ver página ↗';link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
+      const note=document.createElement('small');note.textContent='Buscando anúncio exato...';
+      const show=(url)=>{link.href=url;action.replaceChildren(link)};
+      const existing=verifiedUrl(offer.url);
+      if(existing)show(existing);
+      else{
+       action.append(note);
+       (async()=>{
+        try{
+         const base=location.pathname.startsWith('/radar')?'/radar':'/';
+         const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
+         const data=await r.json().catch(()=>({}));
+         const url=r.ok&&data.status==='ready'&&data.matchLevel==='same_variant'?verifiedUrl(data.url):null;
+         if(url)show(url);else note.textContent='Anúncio exato não confirmado';
+        }catch{note.textContent='Link direto indisponível'}
+       })();
+      }
+      card.append(action);
       host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
