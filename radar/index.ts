@@ -765,30 +765,41 @@ window.__dtSearchOffers=searchInternalOffers;
        return u.href;
       }catch{return null}
      };
-     const valid=data.offers.filter(o=>Number(o.price)>0).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
-     // Identity matching is authoritative on the SerpApi engine; do not run a divergent client filter.
+     const valid=data.offers.map(o=>{
+      let url=null;
+      if(o.linkFrom==='google_shopping_product'){
+       try{const u=new URL(String(o.url||''));if(u.protocol==='https:'&&/^(www\.)?google\.com(\.br)?$/.test(u.hostname)&&u.pathname==='/search')url=u.href;}catch{}
+      }else url=directUrl(o);
+      return {offer:o,url};
+     });
      const visible=valid;
-     const other=[];
      for(const item of visible){
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');
-      const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
+      const money=Number(offer.price)>0?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price)):'Preço não informado';
       const suspected=offer.priceKind==='unverified_low_price'||
        (/iphone|galaxy|smartphone|celular|playstation|ps5|smart tv|televisão/i.test(String(offer.title||''))&&Number(offer.price)<800);
             if(suspected){
-       price.textContent='Valor não confirmado: '+money;
+       price.textContent='Preço informado: '+money;
        const notice=document.createElement('small');
-       notice.textContent='Pode ser parcela ou condição especial; confira o total na loja';
+       notice.textContent='Valor possivelmente parcelado ou promocional; total não verificado';
        notice.style.cssText='display:block;font-size:11px;line-height:1.5;font-weight:400;margin-top:5px;color:#805600';
        price.append(notice);
-      }else price.textContent=money;
+      }else price.textContent=(Number(offer.price)>0?'Preço informado: ':'')+money;
       const action=document.createElement('div');action.style.marginTop='12px';
-      const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
-      action.append(link);card.append(name,title,price,action);host.append(card);
+      if(item.url){
+       const link=document.createElement('a');
+       link.textContent=offer.linkFrom==='google_shopping_product'?'Ver no Google Shopping ↗':'Ver produto na loja ↗';
+       link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
+       action.append(link);
+      }else{
+       const note=document.createElement('small');note.textContent='Link não fornecido pela SerpApi';action.append(note);
+      }
+      card.append(name,title,price,action);host.append(card);
      }
-     status.textContent=visible.length+' ofertas compatíveis com link direto'+(other.length?' · '+other.length+' anúncios de outras versões/combos ocultados':'');
+     status.textContent=visible.length+' resultados retornados pela SerpApi (preços sujeitos a confirmação)';
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
    })();
