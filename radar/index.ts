@@ -795,13 +795,14 @@ window.__dtSearchOffers=searchInternalOffers;
 </script></body></html>`
 page=page.replace(/\\u\{([0-9a-f]+)\}|\\u([0-9a-f]{4})/gi,(_,long,short)=>String.fromCodePoint(parseInt(long||short,16)));
 const adhocRadarRate=new Map();
-function radarRateLimit(req){
+function radarRateLimit(req,scope='general'){
  const now=Date.now();
  const ip=String(req.headers.get('x-forwarded-for')||req.headers.get('x-real-ip')||'anonymous').split(',')[0].trim().slice(0,90);
  if(adhocRadarRate.size>1200)for(const [k,v] of adhocRadarRate){if(now-v.until>0)adhocRadarRate.delete(k)}
- const prev=adhocRadarRate.get(ip);
- if(!prev||prev.until<=now){adhocRadarRate.set(ip,{count:1,until:now+5*60000});return false}
- prev.count+=1;return prev.count>15
+ const key=ip+':'+scope;
+ const prev=adhocRadarRate.get(key);
+ if(!prev||prev.until<=now){adhocRadarRate.set(key,{count:1,until:now+5*60000});return false}
+ prev.count+=1;return prev.count>(scope==='locate'?45:15)
 }
 
 const dfsPilotQuery="Samsung Galaxy A56 256GB",dfsPilotKey="samsung galaxy a56 256gb";
@@ -1123,7 +1124,7 @@ Bun.serve({port:Number(Bun.env.PORT||3000),async fetch(req){const url=new URL(re
  if(req.method!=='POST')return Response.json({error:'method_not_allowed'},{status:405});
  if(!Bun.env.RADAR_INTERNAL_SEARCH_TOKEN)return Response.json({error:'search_unavailable'},{status:503});
  if(Number(req.headers.get('content-length')||0)>3000)return Response.json({error:'payload_too_large'},{status:413});
- if(radarRateLimit(req))return Response.json({status:'rate_limit'},{status:429});
+ if(radarRateLimit(req,'locate'))return Response.json({status:'rate_limit'},{status:429});
  const data=await req.json().catch(()=>null);
  if(typeof data?.title!=='string'||typeof data?.merchant!=='string'||data.title.length>280||data.merchant.length>70)return Response.json({error:'invalid_request'},{status:400});
  try{
