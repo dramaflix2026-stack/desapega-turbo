@@ -738,59 +738,47 @@ window.__dtSearchOffers=searchInternalOffers;
      const response=await fetch(base+'?api=search&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});
      const data=await response.json();
      if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
-     status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
-     let linkQuotaReached=false;
-     let verifiedCount=0;
-     const updateCount=()=>{status.textContent=verifiedCount?verifiedCount+' ofertas com link direto confirmado': 'Nenhuma oferta com link direto confirmado nesta pesquisa';};
-     let linkQueue=Promise.resolve();
-     for(const offer of data.offers){
-      const card=document.createElement('article');card.className='radar-offer';
+     const normalized=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();
+     const wanted=normalized(q);
+     const wantedCapacity=wanted.match(/\\b(64|128|256|512|1024)\\s*(gb|tb)\\b/);
+     const wantedModel=wanted.match(/\\b(?:a|s|m)\\s*([0-9]{2,3})\\b/);
+     const validProduct=offer=>{
+      const title=normalized(offer.title),merchant=normalized(offer.merchant);
+      if(!title||!merchant||/(?:recondicionado|seminovo|usado|reformado|capinha|pelicula|fone|buds|combo|kit|acessorio)/i.test(title))return false;
+      if(wantedModel&&!new RegExp('\\\\b'+wantedModel[0].replace(/\\s+/g,'\\\\s*')+'\\\\b','i').test(title))return false;
+      const sizes=[...title.matchAll(/\\b(64|128|256|512|1024)\\s*(gb|tb)\\b/g)].map(m=>m[1]+m[2]);
+      if(wantedCapacity&&!sizes.includes(wantedCapacity[1]+wantedCapacity[2]))return false;
+      if(wantedCapacity&&sizes.some(v=>v!==wantedCapacity[1]+wantedCapacity[2]))return false;
+      return true;
+     };
+     const directUrl=offer=>{
+      try{
+       const u=new URL(String(offer.url||'')),h=u.hostname.toLowerCase(),p=u.pathname.toLowerCase();
+       if(u.protocol!=='https:'||u.username||u.password||u.port||p.length<5)return null;
+       if(/(^|\\.)google\\.|(^|\\.)bing\\.|(^|\\.)gstatic\\./.test(h))return null;
+       if(['/search','/busca','/categoria','/ofertas','/shopping','/shop','/loja'].some(x=>p===x||p.startsWith(x+'/')))return null;
+       const m=normalized(offer.merchant);
+       const domains=[['amazon','amazon.com.br'],['mercado livre','mercadolivre.com.br'],['mercadolivre','mercadolivre.com.br'],['shopee','shopee.com.br'],['magalu','magazineluiza.com.br'],['magazine luiza','magazineluiza.com.br'],['havan','havan.com.br'],['vivo','vivo.com.br'],['livelo','livelo.com.br']];
+       const match=domains.find(x=>m.includes(x[0]));
+       if(match&&!(h===match[1]||h.endsWith('.'+match[1])))return null;
+       if(!match&&!m.split(/\\s+/).some(x=>x.length>=5&&h.includes(x.replace(/[^a-z0-9]/g,''))))return null;
+       return u.href;
+      }catch{return null}
+     };
+     const valid=data.offers.filter(o=>Number(o.price)>0&&validProduct(o)).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
+     const prices=valid.map(x=>Number(x.offer.price)).sort((a,b)=>a-b);
+     const median=prices.length?prices[Math.floor(prices.length/2)]:0;
+     const visible=valid.filter(x=>!(median>0&&prices.length>=4&&Number(x.offer.price)<median*0.45));
+     for(const item of visible){
+      const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
-      const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      const verifiedUrl=(raw)=>{
-       try{
-        const u=new URL(String(raw||'')),h=u.hostname.toLowerCase(),p=u.pathname.toLowerCase(),m=String(offer.merchant||'').normalize('NFD').toLowerCase();
-        if(u.protocol!=='https:'||u.username||u.password||u.port)return null;
-        const blocked=['google.','bing.','gstatic.','googleusercontent.','youtube.','facebook.','instagram.'];
-        if(blocked.some(x=>h===x.slice(0,-1)||h.includes('.'+x)))return null;
-        if(p.length<5||['/search','/busca','/categoria','/ofertas','/shopping'].some(x=>p===x||p.startsWith(x+'/')))return null;
-        const allowed=(m.includes('amazon')&&(h==='amazon.com.br'||h==='www.amazon.com.br')&&p.includes('/dp/'))||
-         ((m.includes('magalu')||m.includes('magazine luiza'))&&(h==='magazineluiza.com.br'||h==='www.magazineluiza.com.br')&&p.includes('/p/'))||
-         ((m.includes('mercado livre')||m.includes('mercadolivre'))&&(h==='mercadolivre.com.br'||h==='www.mercadolivre.com.br'||h.endsWith('.mercadolivre.com.br'))&&p.includes('mlb'))||
-         (m.includes('kabum')&&(h==='kabum.com.br'||h==='www.kabum.com.br')&&p.includes('/produto/'))||
-         (m.includes('shopee')&&(h==='shopee.com.br'||h==='www.shopee.com.br')&&(p.includes('-i.')||p.includes('/product/')))||
-         (['merchant_exact_product','matched_product_page'].includes(String(offer.linkFrom||''))&&m.replace(/[^a-z0-9]/g,'').split(' ').length>0&&m.split(' ').filter(x=>x.length>=5).some(x=>h.replace(/[^a-z0-9]/g,'').includes(x)));
-        return allowed?u.href:null;
-       }catch{return null}
-      };
-      card.hidden=true;
-      card.append(name,title,price);
+      const price=document.createElement('b');price.textContent=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
       const action=document.createElement('div');action.style.marginTop='12px';
-      const link=document.createElement('a');link.textContent='Ver página ↗';link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
-      const note=document.createElement('small');note.textContent='Buscando anúncio exato...';
-      const show=(url)=>{link.href=url;action.replaceChildren(link);card.hidden=false;verifiedCount++;updateCount()};
-      const existing=verifiedUrl(offer.url);
-      if(existing)show(existing);
-      else{
-       action.append(note);
-       linkQueue=linkQueue.then(async()=>{
-        if(linkQuotaReached){updateCount();return}
-        try{
-         const base=location.pathname.startsWith('/radar')?'/radar':'/';
-         const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
-         const data=await r.json().catch(()=>({}));
-         if(r.status===429){linkQuotaReached=true;updateCount();return}
-         if(!r.ok){updateCount();return}
-         const url=data.status==='ready'&&data.matchLevel==='same_variant'?verifiedUrl(data.url):null;
-         if(url)show(url);else if(data.status==='daily_limit'||data.status==='monthly_limit'){linkQuotaReached=true;updateCount()}
-        }catch{updateCount()}
-       });
-      }
-      card.append(action);
-      host.append(card);
+      const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
+      action.append(link);card.append(name,title,price,action);host.append(card);
      }
-     updateCount();
+     status.textContent=visible.length?visible.length+' ofertas compatíveis com link direto':'Nenhuma oferta compatível com link direto nesta pesquisa';
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
    })();
