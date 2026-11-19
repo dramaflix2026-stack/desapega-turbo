@@ -1321,6 +1321,11 @@ async function serpApiProductSearch(query,storeId){
   const result=await serpApiRequest({engine:"google_shopping",q:v.q,gl:"br",hl:"pt",location:"Brazil",num:40});
   const raw=Array.isArray(result.shopping_results)?result.shopping_results:[];
   const found=[];
+  console.log("dt_serpapi_shopping_shape",JSON.stringify({raw:raw.length,
+   sample:raw.slice(0,3).map(x=>({keys:Object.keys(x).filter(k=>!/token|key|api/i.test(k)).slice(0,25),
+    source:String(x.source||"").slice(0,55),hasProductApi:Boolean(x.serpapi_product_api),
+    hasImmersiveApi:Boolean(x.serpapi_immersive_product_api),
+    linkHost:(()=>{try{return new URL(x.link||x.product_link||"").hostname}catch{return null}})()}))}));
   for(const item of raw){
    const offer=serpApiOffer(item,v.q,observedAt);
    if(offer)found.push(offer);
@@ -1345,6 +1350,9 @@ async function serpApiProductSearch(query,storeId){
        seller.name||seller.source||seller.merchant);
      if(candidate)found.push(candidate);
     }
+    console.log("dt_serpapi_details_shape",JSON.stringify({keys:Object.keys(details).filter(k=>!/token|key/i.test(k)).slice(0,35),
+      sellerResultsKeys:Object.keys(details.sellers_results||{}).slice(0,20),
+      samplePriceKeys:Array.isArray(details.prices)&&details.prices[0]?Object.keys(details.prices[0]).slice(0,20):[]}));
     console.log("dt_serpapi_product_details",JSON.stringify({sellers:sellers.length,direct:found.length,
       sellerKeys:sellers[0]?Object.keys(sellers[0]).filter(k=>!/token|key/i.test(k)).slice(0,16):[]}));
    }catch(error){console.warn("dt_serpapi_product_expansion",String(error.message||error).slice(0,90))}
