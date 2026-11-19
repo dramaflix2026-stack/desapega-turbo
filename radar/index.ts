@@ -714,49 +714,33 @@ const params=new URLSearchParams(location.search);if(params.get('embedded')==='1
 window.__dtRadarBoot=true;
 </script><script>
 (function(){
- const $=id=>document.getElementById(id);
- const fallbackMode=()=>!window.__dtRadarBoot;
- window.addEventListener('error',function(){const n=$('dtOfferSearchStatus');if(n&&fallbackMode())n.textContent='Painel em modo de recuperação. As abas e a pesquisa continuam disponíveis.'});
- document.addEventListener('click',async function(e){
-  if(!fallbackMode())return;
-  const tab=e.target.closest('nav button[data-tab]');
-  if(tab){e.preventDefault();e.stopImmediatePropagation();document.querySelectorAll('nav button[data-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab.dataset.tab));return}
-  const button=e.target.closest('#searchGo');if(!button)return;
-  e.preventDefault();e.stopImmediatePropagation();
-  const input=$('search'),host=$('stores'),status=$('dtOfferSearchStatus'),q=String(input?.value||'').trim();
-  if(!host||!status||q.length<3){if(status)status.textContent='Digite pelo menos 3 caracteres para pesquisar.';return}
-  button.disabled=true;status.textContent='Modo de recuperação: consultando ofertas...';host.replaceChildren();
-  try{
-   const base=location.pathname.startsWith('/radar')?'/radar':'/';
-   const response=await fetch(base+'?api=search&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});
-   const data=await response.json();
-   if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
-   status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
-   for(const offer of data.offers){
-    const card=document.createElement('article');card.className='radar-offer';
-    const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
-    const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
-    const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-    const action=document.createElement('button');action.type='button';action.className='btn';action.textContent='Localizar produto direto';action.style.marginTop='12px';
-    const result=document.createElement('div');result.setAttribute('role','status');result.style.marginTop='8px';
-    action.addEventListener('click',async()=>{
-     if(action.disabled)return;action.disabled=true;action.textContent='Localizando...';result.textContent='';
-     try{
-      const locateBase=location.pathname.startsWith('/radar')?'/radar':'/';
-      const rr=await fetch(locateBase+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
-      const found=await rr.json().catch(()=>({}));
-      if(!rr.ok||found.status!=='ready'||found.matchLevel!=='same_variant'||!found.url)throw Error(found.message||found.error||'Não foi encontrada uma página de produto correspondente.');
-      const u=new URL(found.url);const slug=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-');const tokens=slug.split('-').filter(x=>x.length>=4);const hostName=u.hostname.toLowerCase();
-      if(u.protocol!=='https:'||u.username||u.password||u.port||!tokens.some(x=>hostName.replace(/[^a-z0-9]/g,'').includes(x))||u.pathname.length<4||/^\\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\\/|$)/i.test(u.pathname))throw Error('O endereço não passou na validação da loja.');
-      const link=document.createElement('a');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Abrir página do produto ↗';link.className='btn';link.style.display='inline-block';link.style.marginTop='8px';result.replaceChildren(link);action.textContent='Link localizado';
-     }catch(err){result.textContent=String(err.message||err);action.disabled=false;action.textContent='Tentar localizar novamente'}
+ const byId=id=>document.getElementById(id);
+ document.addEventListener('click',function(event){
+  const tab=event.target.closest('nav button[data-tab]');
+  if(tab){
+   event.preventDefault();
+   document.querySelectorAll('nav button[data-tab]').forEach(b=>b.classList.toggle('active',b===tab));
+   document.querySelectorAll('.panel').forEach(panel=>panel.classList.toggle('active',panel.id===tab.dataset.tab));
+   if(tab.dataset.tab==='historico'&&typeof dtSyncActiveProductInputs==='function')dtSyncActiveProductInputs();
+   return;
+  }
+  const searchButton=event.target.closest('#searchGo');
+  if(searchButton){
+   event.preventDefault();
+   if(typeof searchInternalOffers==='function'){
+    Promise.resolve(searchInternalOffers()).catch(error=>{
+     const status=byId('dtOfferSearchStatus');if(status)status.textContent='Erro na pesquisa: '+String(error?.message||error);
     });
-    card.append(name,title,price,action,result);host.append(card);
+   }else{
+    const input=byId('search'),status=byId('dtOfferSearchStatus');
+    if(status)status.textContent='O módulo de pesquisa não foi inicializado. Atualize a página e tente novamente.';
    }
-  }catch(err){status.textContent='Não foi possível concluir a pesquisa: '+String(err.message||err)}
-  finally{button.disabled=false}
+  }
  },true);
- if(fallbackMode()){const n=$('dtOfferSearchStatus');if(n)n.textContent='Painel em modo de recuperação. Abas e pesquisa reativadas.'}
+ window.addEventListener('error',function(event){
+  const status=byId('dtOfferSearchStatus');
+  if(status)status.textContent='Erro interno do Radar: '+String(event.message||'falha no JavaScript');
+ });
 })();
 </script></body></html>`
 page=page.replace(/\\u\{([0-9a-f]+)\}|\\u([0-9a-f]{4})/gi,(_,long,short)=>String.fromCodePoint(parseInt(long||short,16)));
