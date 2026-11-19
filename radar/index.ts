@@ -738,17 +738,15 @@ window.__dtSearchOffers=searchInternalOffers;
      const response=await fetch(base+'?api=search&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});
      const data=await response.json();
      if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
-     const normalized=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+     const normalized=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();
      const wanted=normalized(q);
-     const wantedCapacity=wanted.match(/\b(64|128|256|512|1024)\s*(gb|tb)\b/);
-     const wantedModel=wanted.match(/\b(?:a|s|m)\s*([0-9]{2,3})\b/);
+     const wantedCapacity=wanted.match(/\\b(64|128|256|512|1024)\\s*(gb|tb)\\b/);
+     const wantedModel=wanted.match(/\\b(?:a|s|m)\\s*([0-9]{2,3})\\b/);
      const validProduct=offer=>{
       const title=normalized(offer.title),merchant=normalized(offer.merchant);
       if(!title||!merchant||/(?:recondicionado|seminovo|usado|reformado|capinha|pelicula|fone|buds|combo|kit|acessorio)/i.test(title))return false;
-      if(wantedModel&&!title.split(/[^a-z0-9]+/).includes(wantedModel[0].replace(/\s+/g,'')))return false;
-      const sizes=[...title.matchAll(/\b(32|64|128|256|512|1024)\s*(gb|tb)\b/g)].map(m=>m[1]+m[2]);
-      // Storage is not RAM: "256GB, 8GB RAM" is a valid 256GB phone.
-      // Only compare storage-sized capacities; 8/12/16/24 GB are RAM.
+      if(wantedModel&&!new RegExp('\\\\b'+wantedModel[0].replace(/\\s+/g,'\\\\s*')+'\\\\b','i').test(title))return false;
+      const sizes=[...title.matchAll(/\\b(64|128|256|512|1024)\\s*(gb|tb)\\b/g)].map(m=>m[1]+m[2]);
       if(wantedCapacity&&!sizes.includes(wantedCapacity[1]+wantedCapacity[2]))return false;
       if(wantedCapacity&&sizes.some(v=>v!==wantedCapacity[1]+wantedCapacity[2]))return false;
       return true;
@@ -767,10 +765,7 @@ window.__dtSearchOffers=searchInternalOffers;
        return u.href;
       }catch{return null}
      };
-     // The engine has already validated product identity, storage and merchant URL.
-     // Do not silently discard all verified offers with a second, divergent UI filter.
-     const valid=data.offers.filter(o=>Number(o.price)>0).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
-     console.info('dt_radar_ui_counts',{received:data.offers.length,linked:valid.length});
+     const valid=data.offers.filter(o=>Number(o.price)>0&&validProduct(o)).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
      const prices=valid.map(x=>Number(x.offer.price)).sort((a,b)=>a-b);
      const median=prices.length?prices[Math.floor(prices.length/2)]:0;
      const visible=valid.filter(x=>!(median>0&&prices.length>=4&&Number(x.offer.price)<median*0.45));
@@ -778,19 +773,7 @@ window.__dtSearchOffers=searchInternalOffers;
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
-      const price=document.createElement('b');
-      const amount=Number(offer.price),money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(amount);
-      // Google Shopping may expose an installment amount as extracted_price.
-      // Keep the listing and its direct link, but never label a likely installment as the full device price.
-      const smartphone=/\\b(?:galaxy|iphone|smartphone|celular|redmi|poco|motorola)\\b/i.test(q+' '+offer.title);
-      const suspiciousInstallment=smartphone&&amount<500;
-      price.textContent=suspiciousInstallment?'Valor informado: '+money:money;
-      if(suspiciousInstallment){
-       const warning=document.createElement('small');
-       warning.textContent='Possível parcela — confira o preço total na loja';
-       warning.style.cssText='display:block;font-size:11px;line-height:1.4;margin-top:5px;color:#805600';
-       price.append(warning);
-      }
+      const price=document.createElement('b');price.textContent=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
       const action=document.createElement('div');action.style.marginTop='12px';
       const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
       action.append(link);card.append(name,title,price,action);host.append(card);
