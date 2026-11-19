@@ -1270,6 +1270,22 @@ async function serpApiAuthDiagnostic(){
  }
 }
 setTimeout(async()=>{
+ if(!serpApiReady())return;
+ try{
+  const shopping=await serpApiRequest({engine:"google_shopping",q:"Samsung Galaxy A56 256GB",gl:"br",hl:"pt",location:"Brazil",num:10});
+  const first=shopping.shopping_results?.find(x=>x.serpapi_product_api);
+  if(!first)return;
+  const api=new URL(first.serpapi_product_api);
+  const token=api.searchParams.get("page_token");
+  if(!token)return;
+  const details=await serpApiRequest({engine:"google_product",page_token:token,gl:"br",hl:"pt"});
+  const pr=details.product_results||{};
+  console.log("dt_serpapi_one_shot_structure",JSON.stringify({productKeys:Object.keys(pr).slice(0,45),
+   productTypes:Object.fromEntries(Object.entries(pr).slice(0,40).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
+   sellersKeys:Object.keys(details.sellers_results||{}).slice(0,20)}));
+ }catch(e){console.warn("dt_serpapi_one_shot_structure",String(e.message||e).slice(0,110))}
+},11000);
+setTimeout(async()=>{
  try{
   const response=await serpApiAuthDiagnostic();
   const result=await response.json();
@@ -1352,6 +1368,9 @@ async function serpApiProductSearch(query,storeId){
     }
     console.log("dt_serpapi_details_shape",JSON.stringify({keys:Object.keys(details).filter(k=>!/token|key/i.test(k)).slice(0,35),
       sellerResultsKeys:Object.keys(details.sellers_results||{}).slice(0,20),
+      productResultKeys:Object.keys(details.product_results||{}).slice(0,45),
+      productResultTypes:Object.fromEntries(Object.entries(details.product_results||{}).filter(([k])=>!/token|key/i.test(k)).slice(0,30).map(([k,v])=>[k,Array.isArray(v)?"array:"+v.length:typeof v])),
+      productSellerKeys:Object.keys(details.product_results?.sellers||details.product_results?.offers||{}).slice(0,20),
       samplePriceKeys:Array.isArray(details.prices)&&details.prices[0]?Object.keys(details.prices[0]).slice(0,20):[]}));
     console.log("dt_serpapi_product_details",JSON.stringify({sellers:sellers.length,direct:found.length,
       sellerKeys:sellers[0]?Object.keys(sellers[0]).filter(k=>!/token|key/i.test(k)).slice(0,16):[]}));
