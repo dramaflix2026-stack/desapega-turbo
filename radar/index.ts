@@ -92,7 +92,8 @@ async function dtLocateForOffer(button,container,offer){
     (source==='store:kabum'&&/^(www\.)?kabum\.com\.br$/i.test(h)&&/^\/produto\/\d{4,15}(?:\/|$)/i.test(p))||
     (source==='store:terabyte'&&/^(www\.)?terabyteshop\.com\.br$/i.test(h)&&/^\/produto\/\d{4,15}(?:\/|$)/i.test(p))||
     (source==='store:pichau'&&/^(www\.)?pichau\.com\.br$/i.test(h)&&/^\/[a-z0-9][a-z0-9-]{12,180}\/?$/i.test(p)&&!/^\/(?:busca|search|categoria|departamento|marcas|ofertas|promocoes|carrinho|login|produto)\b/i.test(p))||
-    (source==='store:le biscuit'&&/^(www\.)?lebiscuit\.com\.br$/i.test(h)&&/\/p\/?$/.test(p))||\n    (()=>{const slug=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-');const tokens=slug.split('-').filter(x=>x.length>=4);const host=h.replace(/[^a-z0-9]/g,'');return tokens.length>0&&tokens.some(x=>host.includes(x))&&p.length>3&&!/^\\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\\/|$)/i.test(p)})()
+    (source==='store:le biscuit'&&/^(www\.)?lebiscuit\.com\.br$/i.test(h)&&/\/p\/?$/.test(p))||
+    (()=>{const slug=String(offer.merchant||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-');const tokens=slug.split('-').filter(x=>x.length>=4);const host=h.replace(/[^a-z0-9]/g,'');return tokens.length>0&&tokens.some(x=>host.includes(x))&&p.length>3&&!/^\\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\\/|$)/i.test(p)})()
    );
    if(!valid)throw Error('invalid_candidate');
    const link=document.createElement('a');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ver produto na loja ↗';
