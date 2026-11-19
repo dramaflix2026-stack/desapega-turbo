@@ -596,8 +596,8 @@ async function dtLoadAutoHistory(query){
  if(dtAutoHistoryData?.query===query&&Date.now()-dtAutoHistoryData.loadedAt<45000){drawHistory();return}
  dtAutoHistoryPending=query;
  try{
-  const base=location.pathname.startsWith('/radar')?'/radar':'/';
-  const response=await fetch(base+(base.includes('?')?'&':'?')+'api=auto-history&q='+encodeURIComponent(query),{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(24000)});
+  const base='/radar';
+  const response=await fetch(base+'?api=auto-history&q='+encodeURIComponent(query),{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(24000)});
   const payload=await response.json().catch(()=>({}));
   if(!response.ok||payload.status!=='ready')throw Error('history_unavailable');
   if($('histSelect').value!==query)return;
