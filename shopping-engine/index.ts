@@ -1330,31 +1330,39 @@ function serpApiOffer(item,query,observedAt,merchantOverride){
   image:item.thumbnail||item.image||null};
 }
 // Radar v3: isolated SerpApi-only pipeline. No Serper/legacy merchant discovery.
-function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
+function radarNormalize(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
+function radarProductIdentity(v){
+ const t=radarNormalize(v);
+ const iphone=t.match(/\biphone\s*(\d{1,2})\b/);
+ const galaxy=t.match(/\bgalaxy\s*([asm]\s*\d{2,3})\b/);
+ const ps5=/\b(?:playstation\s*5|ps5)\b/.test(t);
+ const tv=/\b(?:tv|televisao)\b/.test(t);
+ const inches=t.match(/\b(32|40|43|50|55|58|60|65|70|75|85)\s*(?:polegadas|pol|inch)\b/);
+ const tvCode=t.match(/\b(?:un|qn|q|du|bu|cu|au|u)\s*\d{4,6}[a-z0-9]*\b/);
+ const sizes=[...t.matchAll(/\b(\d{2,4})\s*(gb|tb)\b/g)].map(x=>({n:Number(x[1]),unit:x[2]}));
+ const storage=sizes.filter(x=>x.unit==="tb"||x.n>=32).map(x=>x.n+x.unit);
+ return {t,iphone:iphone?.[1]||null,galaxy:galaxy?.[1].replace(/\s/g,"")||null,ps5,tv,inches:inches?.[1]||null,tvCode:tvCode?.[0].replace(/\s/g,"")||null,storage};
+}
 function radarMatches(query,title){
- const q=radarNormalize(query),t=radarNormalize(title);
- if(!q||!t)return false;
- if(/\\b(?:capa|capinha|pelicula|carregador|usado|seminovo|recondicionado|reformado|peca|display|case|kit|combo)\\b/.test(t))return false;
- const qw=q.split(" "),tw=t.split(" ");
- const model=qw.filter(w=>/[a-z]/.test(w)&&/[0-9]/.test(w)&&!/^(?:[0-9]+(?:gb|tb|mah|hz))$/.test(w));
- if(model.some(w=>!tw.includes(w)))return false;
- // Storage must match, even when the seller uses "256 GB" instead of "256GB".
- const capacity=(words)=>{const result=[];for(let i=0;i<words.length;i++){
-  const compact=words[i].match(/^([0-9]+)(gb|tb)$/);
-  if(compact)result.push(compact[1]+compact[2]);
-  else if(/^[0-9]+$/.test(words[i])&&/^(?:gb|tb)$/.test(words[i+1]||""))result.push(words[i]+words[i+1]);
- }return result};
- const requested=capacity(qw),listed=capacity(tw);
- if(requested.length&&!requested.every(c=>listed.includes(c)))return false;
- // Explicit competing storage variants (128 GB vs 256 GB) are incompatible.
- if(requested.length&&listed.some(c=>!requested.includes(c))){
-  const target=new Set(requested);
-  const other=listed.filter(c=>!target.has(c));
-  // Allow RAM capacities such as 8GB or 12GB alongside the requested storage.
-  if(other.some(c=>parseInt(c,10)>=32||c.endsWith("tb")))return false;
- }
- const important=qw.filter(w=>w.length>=3&&!/^(com|para|the|and|celular|smartphone|novo)$/.test(w)&&!/^[0-9]+(?:gb|tb)$/.test(w));
- return important.length?important.filter(w=>tw.includes(w)).length/important.length>=0.75:requested.length>0;
+ const q=radarProductIdentity(query),p=radarProductIdentity(title);
+ if(!q.t||!p.t)return false;
+ if(/\b(?:capa|capinha|pelicula|usado|seminovo|recondicionado|reformado)\b/.test(p.t))return false;
+ if(q.iphone&&p.iphone!==q.iphone)return false;
+ if(q.galaxy&&p.galaxy!==q.galaxy)return false;
+ if(q.ps5&&!p.ps5)return false;
+ if(q.tv&&!p.tv)return false;
+ if(q.inches&&p.inches&&q.inches!==p.inches)return false;
+ if(q.tvCode&&p.tvCode&&q.tvCode!==p.tvCode)return false;
+ if(q.storage.length&&(!q.storage.every(x=>p.storage.includes(x))||p.storage.some(x=>!q.storage.includes(x))))return false;
+ if(q.ps5&&/\b(?:digital|sem leitor)\b/.test(q.t)!==/\b(?:digital|sem leitor)\b/.test(p.t)&&/\b(?:digital|sem leitor)\b/.test(p.t))return false;
+ const important=q.t.split(" ").filter(w=>w.length>=3&&!/^(com|para|the|and|celular|smartphone|novo|apple|samsung|sony|smart|crystal|uhd)$/.test(w));
+ return important.length?important.filter(w=>p.t.split(" ").includes(w)).length/important.length>=0.55:true;
+}
+function radarPriceKind(price,query,title){
+ const t=radarNormalize(query+" "+title);
+ const expensive=/\b(?:iphone|galaxy|smartphone|celular|playstation|ps5|televisao|tv)\b/.test(t);
+ // Conservative anomaly classification: no assumed installment count or fabricated full price.
+ return expensive&&price<800?"unverified_low_price":"unverified";
 }
 function radarSellerUrl(value,merchant){
  if(typeof value!=="string")return null;
@@ -1383,10 +1391,9 @@ function radarMakeOffer(seller,product,query,observedAt){
  const price=ownPrice||serpApiPrice(product.extracted_price);
  // The Shopping API may expose installment values for some merchants.
  // Never present a suspiciously small amount as a verified full product price.
- const likelyInstallment=/mercado livre|mercadolivre|havan/i.test(merchant)&&
-  /\\b(?:galaxy|smartphone|celular|iphone)\\b/i.test(title)&&price!==null&&price<500;
+ const priceKind=radarPriceKind(price,query,title);
  if(!merchant||!url||!price||!radarMatches(query,title))return null;
- return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,date:observedAt,currency:"BRL",
+ return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,priceKind,date:observedAt,currency:"BRL",
   url,linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Product",
   productId:product.product_id?String(product.product_id).slice(0,100):null,
   image:product.thumbnail||product.image||null};
@@ -1397,7 +1404,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v7-price-kind|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v8-identity|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
