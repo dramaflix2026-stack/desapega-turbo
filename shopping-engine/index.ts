@@ -1249,6 +1249,26 @@ async function meliOAuthCallback(req,url){
 /* SerpApi Radar MVP: direct product pages only; never substitute Google Shopping URLs. */
 const serpApiReady=()=>Boolean(Bun.env.SERPAPI_API_KEY);
 const serpApiCache=new Map();
+async function serpApiAuthDiagnostic(){
+ const raw=String(Bun.env.SERPAPI_API_KEY||"");
+ const trimmed=raw.trim();
+ const shape={configured:raw.length>0,length:raw.length,hasOuterWhitespace:raw!==trimmed,
+  hasQuoteWrapping:/^["']|["']$/.test(trimmed),hasApiKeyPrefix:/^api_key\s*=/i.test(trimmed),
+  containsWhitespace:/\s/.test(trimmed),looksHex64:/^[a-f0-9]{64}$/i.test(trimmed)};
+ if(!shape.configured)return safeJson({provider:"serpapi",status:"missing",shape},503);
+ try{
+  const endpoint=new URL("https://serpapi.com/account.json");
+  endpoint.searchParams.set("api_key",raw);
+  const response=await fetch(endpoint,{signal:AbortSignal.timeout(15000)});
+  const data=await response.json().catch(()=>({}));
+  return safeJson({provider:"serpapi",status:response.ok?"authenticated":"rejected",
+   httpStatus:response.status,shape,
+   providerError:response.ok?null:String(data.error||data.message||"authentication_rejected").slice(0,120),
+   remainingSearches:response.ok?(data.total_searches_left??null):null},response.ok?200:502);
+ }catch(error){
+  return safeJson({provider:"serpapi",status:"network_error",shape,error:String(error.message||error).slice(0,90)},503);
+ }
+}
 async function serpApiRequest(params){
  const url=new URL("https://serpapi.com/search.json");
  for(const [key,value] of Object.entries(params))if(value!==undefined&&value!==null)url.searchParams.set(key,String(value));
@@ -1382,6 +1402,7 @@ if(u.pathname==="/on-demand/search"&&req.method==="POST"){
 
 if(u.pathname==="/meli/status"&&req.method==="GET"){const linked=await meliStoredCredentials().then(Boolean).catch(()=>false);return safeJson({provider:"mercadolivre_official_api",credentialsConfigured:meliOAuthReady(),accountLinked:linked,mode:"manual_only",apiAccessVerified:false,automaticEnabled:false});}
 if(u.pathname==="/meli/oauth/setup"&&req.method==="GET")return safeJson({provider:"mercadolivre_oauth",appConfigured:Boolean(Bun.env.MELI_CLIENT_ID),redirectConfigured:Boolean(Bun.env.MELI_REDIRECT_URI),secretConfigured:Boolean(Bun.env.MELI_CLIENT_SECRET),callbackPublished:true,authorizationEnabled:meliOAuthReady(),tokenStorageEnabled:meliOAuthReady(),nextStep:meliOAuthReady()?"authorize_account_at_/meli/connect":"complete_configuration"});
+if(u.pathname==="/serpapi/auth-diagnostic"&&req.method==="GET"){if(!authorized(req))return safeJson({error:"restricted"},403);return serpApiAuthDiagnostic();}
 if(u.pathname==="/serpapi/status"&&req.method==="GET")return safeJson({provider:"serpapi_google_shopping",configured:serpApiReady(),directLinksOnly:true});
 if(u.pathname==="/serper/status"&&req.method==="GET")return safeJson({provider:"serper_google_shopping",configured:serperConfigured(),dailyEnabled:serperEnabled(),creditCap:serperMonthlyCreditCap(),products:queries.length});
 if(u.pathname==="/catalog"&&req.method==="GET")return safeJson({planned:queries.length,products:queries.map(query=>({query,status:"awaiting_real_collection"})),providerConfigured:ok(),databaseConfigured:dbok(),dailySchedulerEnabled:dailyEnabled(),maxMonthlyTasks:maxMonthlyTasks(),pricesFabricated:0});
