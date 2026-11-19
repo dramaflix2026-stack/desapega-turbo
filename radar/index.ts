@@ -767,7 +767,10 @@ window.__dtSearchOffers=searchInternalOffers;
        return u.href;
       }catch{return null}
      };
-     const valid=data.offers.filter(o=>Number(o.price)>0&&validProduct(o)).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
+     // The engine has already validated product identity, storage and merchant URL.
+     // Do not silently discard all verified offers with a second, divergent UI filter.
+     const valid=data.offers.filter(o=>Number(o.price)>0).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
+     console.info('dt_radar_ui_counts',{received:data.offers.length,linked:valid.length});
      const prices=valid.map(x=>Number(x.offer.price)).sort((a,b)=>a-b);
      const median=prices.length?prices[Math.floor(prices.length/2)]:0;
      const visible=valid.filter(x=>!(median>0&&prices.length>=4&&Number(x.offer.price)<median*0.45));
