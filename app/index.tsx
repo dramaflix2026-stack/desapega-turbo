@@ -317,6 +317,27 @@ const id=String(d.id||""),status=String(d.status||"");
 if(!dtIsUUID(id)||!["draft","published","sold","paused"].includes(status))return json(400,{error:"Status inválido."});
 try{const x=await fetch(origin()+"/rest/v1/dt_listings?id=eq."+id+"&user_id=eq."+encodeURIComponent(u.user.id),{method:"PATCH",headers:dtDbHeaders(u.token,{"content-type":"application/json","prefer":"return=representation"}),body:JSON.stringify({status}),signal:AbortSignal.timeout(12000)});if(!x.ok)return json(503,{error:"Não foi possível salvar o status."});const rows:any=await x.json();return rows.length?json(200,{saved:true,status}):json(404,{error:"Anúncio não encontrado."})}catch{return json(503,{error:"Falha ao atualizar."})}
 }
+
+if(path==="/api/ai/review"&&req.method==="POST"){
+if(!dtSameOrigin(req,url))return json(403,{error:"Origem inválida."});
+const user=await getUser(req);if(!user)return json(401,{error:"Entre na sua conta."});
+if(!Bun.env.OPENAI_API_KEY)return json(503,{error:"IA indisponível."});
+if(Number(req.headers.get("content-length")||0)>1300000)return json(413,{error:"Imagem muito grande."});
+let d:any;try{const raw=await req.text();if(raw.length>1300000)return json(413,{error:"Dados muito grandes."});d=JSON.parse(raw)}catch{return json(400,{error:"Dados inválidos."})}
+const action=String(d.action||"review"),title=String(d.title||"").slice(0,180).trim(),description=String(d.description||"").slice(0,4500).trim(),details=String(d.details||"").slice(0,1000),condition=String(d.condition||"").slice(0,80),item=String(d.item||"").slice(0,120),photo=String(d.photo||"");
+if(!["review","improve"].includes(action)||!title||!description)return json(400,{error:"Título e descrição obrigatórios."});
+if(photo&&(photo.length>1150000||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)))return json(400,{error:"Imagem inválida."});
+const schema={type:"object",additionalProperties:false,properties:{title_score:{type:"integer"},description_score:{type:"integer"},information_score:{type:"integer"},photo_score:{type:"integer"},photo_evaluated:{type:"boolean"},recommendations:{type:"array",items:{type:"string"}},revised_title:{type:"string"},revised_description:{type:"string"}},required:["title_score","description_score","information_score","photo_score","photo_evaluated","recommendations","revised_title","revised_description"]};
+const input:any[]=[{type:"input_text",text:JSON.stringify({action,item,condition,details,title,description,has_photo:!!photo})}];
+if(photo)input.push({type:"input_image",image_url:photo,detail:"low"});
+try{
+const x=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+Bun.env.OPENAI_API_KEY},body:JSON.stringify({model:"gpt-4.1-mini",store:false,instructions:"Você é avaliador de qualidade de anúncios de produtos usados no Brasil. Avalie APENAS evidências fornecidas. Critérios: título 0-25 (clareza e especificidade), descrição 0-30 (utilidade, persuasão honesta, defeitos e incertezas), informações 0-25 (conservação, acessórios, preço e estado, sem exigir fatos que não existem), fotografia 0-20 (nitidez, enquadramento, fundo e defeitos visíveis). Se não houver foto, photo_evaluated=false e photo_score=0; nunca afirme ter visto foto. Se houver, photo_evaluated=true e avalie visualmente a foto original, não fotos de IA. Se o usuário não testou recentemente, não afirme funcionamento atual. Não invente marca, modelo, acessórios, especificações, garantia, testes ou defeitos. Se action=improve, retorne revised_title e revised_description com redação aprimorada sem acrescentar fatos; se review, retorne os textos originais sem alteração. Recomendações em PT-BR curtas e práticas (até 4). Pontue com rigor e justifique com recomendações. Responda JSON válido.",input:[{role:"user",content:input}],text:{format:{type:"json_schema",name:"dt_review",strict:true,schema}},max_output_tokens:1150}),signal:AbortSignal.timeout(30000)});
+if(!x.ok)return json(502,{error:"Não foi possível analisar o anúncio."});
+const b:any=await x.json(),raw=(b.output||[]).flatMap((o:any)=>o.content||[]).filter((o:any)=>o.type==="output_text").map((o:any)=>o.text||"").join("");const v=JSON.parse(raw);const clamp=(n:any,max:number)=>Math.max(0,Math.min(max,Math.round(Number(n)||0)));
+const parts=[{name:"Título e palavras-chave",score:clamp(v.title_score,25),max:25},{name:"Descrição e transparência",score:clamp(v.description_score,30),max:30},{name:"Informações do produto",score:clamp(v.information_score,25),max:25},{name:"Qualidade das fotos",score:photo?clamp(v.photo_score,20):0,max:20}];
+return json(200,{score:parts.reduce((n,p)=>n+p.score,0),parts,photo_evaluated:!!photo&&v.photo_evaluated===true,recommendations:Array.isArray(v.recommendations)?v.recommendations.slice(0,4).map((x:any)=>String(x).slice(0,220)):[],title:action==="improve"?String(v.revised_title||title).slice(0,180):title,description:action==="improve"?String(v.revised_description||description).slice(0,4500):description,action});
+}catch(e){console.warn("dt_review_failed",String(e).slice(0,120));return json(502,{error:"Análise indisponível. Tente novamente."})}
+}
 if(path==="/api/ai/platform-copy"&&req.method==="POST"){
 if(!dtSameOrigin(req,url))return json(403,{error:"Origem inválida."});
 const u=await getUser(req);if(!u)return json(401,{error:"Entre na sua conta."});
