@@ -781,6 +781,8 @@ async function universalProductSearch(q){
 }
 
 
+function genericMerchantStore(merchant){const slug=String(merchant||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,55);return slug.length>=3?"generic-"+slug:null}
+function genericMerchantHostMatches(url,store){try{const u=new URL(String(url||""));if(u.protocol!=="https:"||u.username||u.password||u.port)return false;const host=u.hostname.toLowerCase();if(/(^|\.)(google|gstatic|googleusercontent|youtube|facebook|instagram|bing|yahoo)\./i.test(host))return false;const tokens=String(store||"").replace(/^generic-/,"").split("-").filter(x=>x.length>=4);return tokens.length>0&&tokens.some(token=>host.replace(/[^a-z0-9]/g,"").includes(token))}catch{return false}}
 function directLocatorStore(merchant){
  const m=String(merchant||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
  if(/^amazon(?:\.com\.br)?(?:\s*-\s*(?:retail|seller))?$/i.test(m.trim()))return "amazon";
@@ -792,7 +794,7 @@ function directLocatorStore(merchant){
  if(/ka\s*bum|kabum/i.test(m))return "kabum";
  if(/terabyte/i.test(m))return "terabyte";
  if(/^pichau(?:\.com\.br)?$/i.test(m.trim()))return "pichau";
- return null
+ return genericMerchantStore(merchant)
 }
 function directLocatorURL(v,store){
  try{
@@ -820,6 +822,7 @@ function directLocatorURL(v,store){
   if(store==="magalu"&&/^(www\.)?magazineluiza\.com\.br$/i.test(u.hostname)&&/^\/[^/]+\/p\/[a-z0-9]{5,20}(?:\/[^/?#]+){0,2}\/?$/i.test(u.pathname))return u.href;
   if(store==="mercadolivre"&&/^(?:www\.|produto\.)?mercadolivre\.com\.br$/i.test(u.hostname)&&/(?:\/MLB-?\d{7,15}(?:[\/-]|$)|\/p\/MLB\d{7,15}\/?$)/i.test(u.pathname))return u.href;
   if(store==="shopee"&&/^(www\.)?shopee\.com\.br$/i.test(u.hostname)&&/(?:\/product\/\d{4,20}\/\d{4,20}|-i\.\d{4,20}\.\d{4,20})(?:\/|$)/i.test(u.pathname))return u.href;
+  if(String(store||'').startsWith('generic-')&&genericMerchantHostMatches(u.href,store)&&u.pathname.length>3&&!/^\/(?:search|busca|categoria|departamento|ofertas|promocoes|carrinho|login)(?:\/|$)/i.test(u.pathname))return u.href;
  }catch{}
  return null
 }
@@ -902,7 +905,7 @@ async function findMerchantPageForOffer(title,merchant){
   const storage=sourceTitle.match(/\b(?:64|128|256|512|1024)\s*GB\b/i)?.[0]||"";
   const ram=sourceTitle.match(/\b(\d{1,2})\s*GB\s*RAM\b|\bRAM\s*(\d{1,2})\s*GB\b/i)?.[0]||"";
   const brand=sourceTitle.match(/\b(?:Samsung|Apple|Motorola|Xiaomi|Mondial|Philco|LG|Electrolux|Lenovo|Dell|Acer|Asus)\b/i)?.[0]||"";
-  const query=[sourceTitle.slice(0,140),labels[store],"comprar"].filter(Boolean).join(" ");
+  const query=[sourceTitle.slice(0,140),labels[store]||String(merchant||"").slice(0,80),"comprar"].filter(Boolean).join(" ");
   const r=await fetch("https://google.serper.dev/search",{method:"POST",
    headers:{"X-API-KEY":Bun.env.SERPER_API_KEY,"Content-Type":"application/json"},
    body:JSON.stringify({q:query,gl:"br",hl:"pt-br",num:15}),signal:AbortSignal.timeout(24000)});
