@@ -908,7 +908,11 @@ async function findMerchantPageForOffer(title,merchant){
   // Constrain organic discovery to the seller's product pages instead of broad comparison results.
   const domains={amazon:"amazon.com.br",magalu:"magazineluiza.com.br",mercadolivre:"mercadolivre.com.br",shopee:"shopee.com.br",kabum:"kabum.com.br",americanas:"americanas.com.br",lebiscuit:"lebiscuit.com.br",terabyte:"terabyteshop.com.br",pichau:"pichau.com.br"};
   const domain=domains[store]||null;
-  const query=[sourceTitle.slice(0,140),domain?"site:"+domain:(labels[store]||String(merchant||"").slice(0,80))].filter(Boolean).join(" ");
+  // Search for the exact product identity rather than copying marketing copy into Google.
+  const color=sourceTitle.match(/\b(?:preto|black|grafite|graphite|cinza|gray|grey|rosa|pink|verde|green|azul|blue|branco|white|prata|silver|dourado|gold|violeta|purple|roxo)\b/i)?.[0]||"";
+  const identity=[brand,model,storage,ram,color].filter(Boolean).join(" ").replace(/\s+/g," ").trim();
+  const searchTerms=identity.length>=12&&model!==sourceTitle?identity:sourceTitle.slice(0,110);
+  const query=[searchTerms,domain?"site:"+domain:(labels[store]||String(merchant||"").slice(0,80))].filter(Boolean).join(" ");
   const r=await fetch("https://google.serper.dev/search",{method:"POST",
    headers:{"X-API-KEY":Bun.env.SERPER_API_KEY,"Content-Type":"application/json"},
    body:JSON.stringify({q:query,gl:"br",hl:"pt-br",num:15}),signal:AbortSignal.timeout(24000)});
