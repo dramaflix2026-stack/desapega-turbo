@@ -739,6 +739,8 @@ window.__dtSearchOffers=searchInternalOffers;
      const data=await response.json();
      if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
      status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
+     let linkQuotaReached=false;
+     let linkQueue=Promise.resolve();
      for(const offer of data.offers){
       const card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
@@ -769,15 +771,19 @@ window.__dtSearchOffers=searchInternalOffers;
       if(existing)show(existing);
       else{
        action.append(note);
-       (async()=>{
+       linkQueue=linkQueue.then(async()=>{
+        if(linkQuotaReached){note.textContent='Limite de consultas de links atingido';return}
         try{
          const base=location.pathname.startsWith('/radar')?'/radar':'/';
          const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
          const data=await r.json().catch(()=>({}));
-         const url=r.ok&&data.status==='ready'&&data.matchLevel==='same_variant'?verifiedUrl(data.url):null;
-         if(url)show(url);else note.textContent='Anúncio exato não confirmado';
+         if(r.status===429){linkQuotaReached=true;note.textContent='Limite de consultas de links atingido';return}
+         if(!r.ok){note.textContent='Serviço de links indisponível';return}
+         const url=data.status==='ready'&&data.matchLevel==='same_variant'?verifiedUrl(data.url):null;
+         if(url)show(url);else if(data.status==='daily_limit'||data.status==='monthly_limit'){linkQuotaReached=true;note.textContent='Limite de consultas de links atingido'}
+         else note.textContent='Anúncio exato não confirmado';
         }catch{note.textContent='Link direto indisponível'}
-       })();
+       });
       }
       card.append(action);
       host.append(card);
