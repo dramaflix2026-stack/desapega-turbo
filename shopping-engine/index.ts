@@ -1401,7 +1401,7 @@ function radarMakeOffer(seller,product,query,observedAt){
  // The Shopping API may expose installment values for some merchants.
  // Never present a suspiciously small amount as a verified full product price.
  const priceKind=radarPriceKind(price,query,title);
- if(!merchant||!url||!price||!radarMatches(query,title))return null;
+ if(!merchant||!url||!price)return null;
  return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,priceKind,date:observedAt,currency:"BRL",
   url,linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Product",
   productId:product.product_id?String(product.product_id).slice(0,100):null,
@@ -1413,22 +1413,31 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v9-tv-sku|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v10-all-shopping|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
  try{
   const shopping=await serpApiRequest({engine:"google_shopping",q:v.q,gl:"br",hl:"pt",location:"Brazil",num:40});
   const raw=Array.isArray(shopping.shopping_results)?shopping.shopping_results:[];
-  const matching=raw.filter(x=>radarMatches(v.q,x.title));
-  const found=[];
-  for(const product of matching){
-   const offer=radarMakeOffer({...product,name:product.source},product,v.q,observedAt);
-   if(offer)found.push(offer);
-  }
-  // Only fetch detail pages for matching products; avoid burning credits on unrelated listings.
-  const detailCandidates=matching.filter(x=>x.serpapi_product_api).slice(0,6);
+  // Every Shopping result is displayed, including entries with Google Shopping-only URLs.
+  // A Google Shopping URL is never described as a direct merchant URL.
+  const found=raw.map((product,index)=>{
+   const price=serpApiPrice(product.extracted_price)||serpApiPrice(product.price);
+   const direct=radarSellerUrl(product.link||product.direct_link||product.offer_link,product.source);
+   const shoppingUrl=typeof product.product_link==="string"&&/^https:\/\/www\.google\.com(?:\.br)?\/search\?/.test(product.product_link)?product.product_link:null;
+   return {title:String(product.title||v.q).slice(0,280),merchant:String(product.source||"Google Shopping").slice(0,110),
+    price:price||null,priceKind:price?radarPriceKind(price,v.q,product.title):"missing",
+    priceLabel:typeof product.price==="string"?product.price:null,
+    priceSource:"google_shopping",date:observedAt,currency:"BRL",
+    url:direct||shoppingUrl,linkFrom:direct?"serpapi_direct_product":"google_shopping_product",
+    status:"review_required",source:"SerpApi / Google Shopping",productId:product.product_id||null,
+    image:product.thumbnail||null,position:index+1};
+  });
+  // Keep the raw result count intact. Store details are supplemental, not a gate.
+  const detailCandidates=raw.filter(x=>x.serpapi_product_api).slice(0,6);
   let detailCalls=0,storeRows=0;
+  const extra=[];
   for(const product of detailCandidates){
    try{
     const api=new URL(product.serpapi_product_api);
@@ -1441,14 +1450,16 @@ async function serpApiProductSearch(query,storeId){
     storeRows+=stores.length;
     for(const seller of stores){
      const offer=radarMakeOffer(seller,product,v.q,observedAt);
-     if(offer)found.push(offer);
+     if(offer)extra.push(offer);
     }
    }catch(error){console.warn("dt_radar_v3_detail_error",String(error.message||error).slice(0,90))}
   }
-  const offers=[...new Map(found.filter(x=>!conf||conf.store.test(x.merchant)).map(x=>[x.url,x])).values()]
-   .sort((a,b)=>a.price-b.price).slice(0,30);
+  const seen=new Set(found.filter(x=>x.linkFrom==="serpapi_direct_product").map(x=>x.url));
+  const supplemental=extra.filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true});
+  const offers=[...found,...supplemental].filter(x=>!conf||conf.store.test(x.merchant));
+  const matching=raw;
   const data={query:v.q,status:"ready",cached:false,checkedAt:observedAt,rawCount:raw.length,
-   offers,source:"serpapi_google_shopping",directLinksOnly:true,store:conf?.label||null};
+   offers,source:"serpapi_google_shopping",directLinksOnly:false,store:conf?.label||null};
   serpApiCache.set(cacheKey,{expires:Date.now()+10*60*1000,data});
   if(serpApiCache.size>100)serpApiCache.delete(serpApiCache.keys().next().value);
   console.log("dt_radar_v3",JSON.stringify({query:v.key,raw:raw.length,matching:matching.length,
