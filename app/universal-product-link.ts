@@ -6,6 +6,11 @@
 export type LinkCandidate={url:string;title:string;merchant:string};
 export type MatchResult={ok:boolean;reason:string;url?:string};
 const normalize=(s:string)=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+const extraStores:Record<string,{merchant:RegExp;host:RegExp;path:RegExp}>={
+ americanas:{merchant:/americanas/i,host:/(^|\\.)americanas\\.com\\.br$/i,path:/(?:\\/produto\\/\\d+|\\/p\\/?$)/i},
+ casasbahia:{merchant:/casas\\s*bahia/i,host:/(^|\\.)casasbahia\\.com\\.br$/i,path:/\\/\\d{5,}(?:\\/|$)/i},
+ pontofrio:{merchant:/ponto\\s*frio|pontofrio/i,host:/(^|\\.)pontofrio\\.com\\.br$/i,path:/\\/\\d{5,}(?:\\/|$)/i},
+};
 const forbidden=/\b(usado|seminovo|recondicionado|refil|peca|capa|capinha|pelicula|cabo|suporte|adaptador|kit|combo|compativel|reposicao|reparo)\b/;
 const stores:Record<string,{merchant:RegExp;host:RegExp;path:RegExp}>={
  mercadolivre:{merchant:/mercado\s*livre|mercadolivre/i,host:/(^|\.)mercadolivre\.com\.br$/i,path:/\/(?:MLB-?\d{7,15}|p\/MLB\d{7,15})(?:[/?-]|$)/i},
@@ -18,7 +23,7 @@ const stores:Record<string,{merchant:RegExp;host:RegExp;path:RegExp}>={
 const modelTokens=(s:string)=>normalize(s).split(" ").filter(x=>/[a-z]/.test(x)&&/\d/.test(x)&&x.length>=3);
 const variantTokens=(s:string)=>normalize(s).match(/\b(?:\d{2,4}\s*(?:gb|tb|hz|polegadas|pol)|(?:110|127|220)\s*v)\b/g)||[];
 export function validateProductLink(observedTitle:string,merchant:string,candidate:LinkCandidate):MatchResult{
- const store=Object.values(stores).find(x=>x.merchant.test(merchant));
+ const store=Object.values({...stores,...extraStores}).find(x=>x.merchant.test(merchant));
  if(!store)return {ok:false,reason:"merchant_not_supported"};
  let url:URL;try{url=new URL(candidate.url)}catch{return {ok:false,reason:"invalid_url"}}
  if(url.protocol!=="https:"||url.username||url.password||url.port||!store.host.test(url.hostname)||!store.path.test(url.pathname))return {ok:false,reason:"not_a_product_page"};
