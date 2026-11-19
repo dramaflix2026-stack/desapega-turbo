@@ -1358,12 +1358,14 @@ async function serpApiProductSearch(query,storeId){
     const pageToken=productApi.searchParams.get("page_token");
     if(!pageToken)continue;
     const details=await serpApiRequest({engine:"google_product",page_token:pageToken,gl:"br",hl:"pt"});
-    const sellers=[...(Array.isArray(details.sellers_results?.online_sellers)?details.sellers_results.online_sellers:[]),
+    const product=details.product_results||{};
+    const sellers=[...(Array.isArray(product.stores)?product.stores:[]),
+      ...(Array.isArray(details.sellers_results?.online_sellers)?details.sellers_results.online_sellers:[]),
       ...(Array.isArray(details.sellers_results?.sellers)?details.sellers_results.sellers:[]),
       ...(Array.isArray(details.online_sellers)?details.online_sellers:[]),
       ...(Array.isArray(details.prices)?details.prices:[])];
     for(const seller of sellers){
-     const candidate=serpApiOffer({...seller,title:item.title,thumbnail:item.thumbnail,
+     const candidate=serpApiOffer({...seller,title:seller.title||item.title,thumbnail:item.thumbnail,
        extracted_price:seller.extracted_price||seller.price||item.extracted_price},v.q,observedAt,
        seller.name||seller.source||seller.merchant);
      if(candidate)found.push(candidate);
