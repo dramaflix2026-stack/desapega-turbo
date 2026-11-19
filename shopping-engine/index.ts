@@ -1324,7 +1324,7 @@ function serpApiOffer(item,query,observedAt,merchantOverride){
  if(!title||!price||classifySerper(query,title)==="mismatch"||/\busado\b|seminovo|recondicionado|pelicula|capa para/i.test(title))return null;
  const url=[item.link,item.direct_link,item.offer_link,item.url].map(link=>serpApiDirectLink(link,merchant)).find(Boolean);
  if(!url)return null;
- return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,date:observedAt,currency:"BRL",url,
+ return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,priceKind:likelyInstallment?"possible_installment":"unverified",priceSource:ownPrice?"seller":"shopping_fallback",date:observedAt,currency:"BRL",url,
   linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Shopping",
   productId:item.product_id?String(item.product_id).slice(0,100):null,
   image:item.thumbnail||item.image||null};
@@ -1379,7 +1379,12 @@ function radarMakeOffer(seller,product,query,observedAt){
  const merchant=String(seller.name||seller.source||seller.merchant||seller.seller||product.source||"").trim();
  const title=String(seller.title||product.title||"").trim();
  const url=radarSellerUrl(seller.link||seller.direct_link||seller.offer_link||seller.url,merchant);
- const price=serpApiPrice(seller.extracted_price)||serpApiPrice(seller.price)||serpApiPrice(product.extracted_price);
+ const ownPrice=serpApiPrice(seller.extracted_price)||serpApiPrice(seller.price);
+ const price=ownPrice||serpApiPrice(product.extracted_price);
+ // The Shopping API may expose installment values for some merchants.
+ // Never present a suspiciously small amount as a verified full product price.
+ const likelyInstallment=/mercado livre|mercadolivre|havan/i.test(merchant)&&
+  /\\b(?:galaxy|smartphone|celular|iphone)\\b/i.test(title)&&price!==null&&price<500;
  if(!merchant||!url||!price||!radarMatches(query,title))return null;
  return {title:title.slice(0,280),merchant:merchant.slice(0,110),price,date:observedAt,currency:"BRL",
   url,linkFrom:"serpapi_direct_product",status:"review_required",source:"SerpApi / Google Product",
@@ -1392,7 +1397,7 @@ async function serpApiProductSearch(query,storeId){
  if(!v||v.key.length<3)return safeJson({error:"invalid_query"},400);
  const conf=storeId?radarMerchantStores[String(storeId)]:null;
  if(storeId&&!conf)return safeJson({error:"invalid_store"},400);
- const cacheKey="v6-restore|"+v.key+"|"+(storeId||"all");
+ const cacheKey="v7-price-kind|"+v.key+"|"+(storeId||"all");
  const cached=serpApiCache.get(cacheKey);
  if(cached&&cached.expires>Date.now())return safeJson({...cached.data,cached:true});
  const observedAt=new Date().toISOString();
