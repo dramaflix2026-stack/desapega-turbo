@@ -24,8 +24,8 @@ export function validateProductLink(observedTitle:string,merchant:string,candida
  if(url.protocol!=="https:"||url.username||url.password||url.port||!store.host.test(url.hostname)||!store.path.test(url.pathname))return {ok:false,reason:"not_a_product_page"};
  const observed=normalize(observedTitle),found=normalize(candidate.title);
  if(!observed||!found||forbidden.test(found)&&!forbidden.test(observed))return {ok:false,reason:"wrong_condition_or_accessory"};
- const models=modelTokens(observed);
- if(models.length&&models.some(x=>!found.includes(x)))return {ok:false,reason:"model_mismatch"};
+ const models=modelTokens(observed).filter(x=>!/^\\d+(?:gb|tb|hz|pol)$/.test(x));
+ if(models.length&&models.some(x=>!found.replace(/\\s+/g,"").includes(x)))return {ok:false,reason:"model_mismatch"};
  const variants=variantTokens(observed);
  if(variants.some(x=>!found.includes(x)))return {ok:false,reason:"variant_mismatch"};
  const words=observed.split(" ").filter(x=>x.length>=4&&!/^(monitor|gamer|produto|preto|branco|novo|para|com|full|ultra|polegadas)$/.test(x));
