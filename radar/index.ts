@@ -765,10 +765,17 @@ window.__dtSearchOffers=searchInternalOffers;
        return u.href;
       }catch{return null}
      };
-     const valid=data.offers.filter(o=>Number(o.price)>0&&validProduct(o)).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
-     const prices=valid.map(x=>Number(x.offer.price)).sort((a,b)=>a-b);
-     const median=prices.length?prices[Math.floor(prices.length/2)]:0;
-     const visible=valid.filter(x=>!(median>0&&prices.length>=4&&Number(x.offer.price)<median*0.45));
+     const valid=data.offers.filter(o=>Number(o.price)>0).map(o=>({offer:o,url:directUrl(o)})).filter(x=>x.url);
+     const requestedStorage=String(q).toLowerCase().match(/(64|128|256|512|1024)\\s*(gb|tb)/);
+     const compatible=item=>{
+      const title=String(item.offer.title||'').toLowerCase();
+      if(/recondicionado|seminovo|usado|galaxy buds|\\+ fone|galaxy fit|combo|kit com/i.test(title))return false;
+      if(!requestedStorage)return true;
+      const sizes=[...title.matchAll(/(64|128|256|512|1024)\\s*(gb|tb)/g)].map(m=>m[1]+m[2]);
+      return sizes.includes(requestedStorage[1]+requestedStorage[2])&&sizes.every(x=>x===requestedStorage[1]+requestedStorage[2]);
+     };
+     const visible=valid.filter(compatible);
+     const other=valid.filter(x=>!compatible(x));
      for(const item of visible){
       const offer=item.offer,card=document.createElement('article');card.className='radar-offer';
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
@@ -776,8 +783,7 @@ window.__dtSearchOffers=searchInternalOffers;
       const price=document.createElement('b');
       const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(offer.price));
       const suspected=offer.priceKind==='possible_installment'||
-       (/mercado livre|mercadolivre|havan/i.test(String(offer.merchant||''))&&
-        /galaxy|smartphone|celular|iphone/i.test(String(offer.title||''))&&Number(offer.price)<500);
+       (/galaxy|smartphone|celular|iphone/i.test(String(offer.title||''))&&Number(offer.price)<500);
       if(suspected){
        price.textContent='Possível parcela: '+money;
        const notice=document.createElement('small');
@@ -789,7 +795,7 @@ window.__dtSearchOffers=searchInternalOffers;
       const link=document.createElement('a');link.textContent='Ver página ↗';link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
       action.append(link);card.append(name,title,price,action);host.append(card);
      }
-     status.textContent=visible.length?visible.length+' ofertas compatíveis com link direto':'Nenhuma oferta compatível com link direto nesta pesquisa';
+     status.textContent=visible.length+' ofertas compatíveis com link direto'+(other.length?' · '+other.length+' anúncios de outras versões/combos ocultados':'');
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
    })();
