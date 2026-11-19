@@ -744,7 +744,29 @@ window.__dtSearchOffers=searchInternalOffers;
       const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
       const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
       const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
-      card.append(name,title,price);host.append(card);
+      const actions=document.createElement('div');actions.style.marginTop='12px';
+      const direct=typeof offer.url==='string'&&/^https:\/\//i.test(offer.url)&&!/(?:google\.|bing\.|serper\.)/i.test(new URL(offer.url).hostname)?offer.url:null;
+      const link=document.createElement('a');link.textContent='Abrir produto na loja ↗';link.target='_blank';link.rel='noopener noreferrer';link.className='radar-mvp-more';
+      if(direct){link.href=direct;actions.append(link)}
+      else{
+       const button=document.createElement('button');button.type='button';button.textContent='Localizar página do produto';button.className='radar-mvp-more';
+       const msg=document.createElement('small');msg.style.display='block';
+       button.addEventListener('click',async()=>{
+        button.disabled=true;button.textContent='Localizando...';msg.textContent='';
+        try{
+         const base=location.pathname.startsWith('/radar')?'/radar':'/';
+         const r=await fetch(base+'?api=locate',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({title:offer.title,merchant:offer.merchant})});
+         const d=await r.json();
+         if(!r.ok||d.status!=='ready'||d.matchLevel!=='same_variant'||!d.url)throw Error('Página exata não localizada');
+         const u=new URL(d.url),host=u.hostname.toLowerCase(),merchant=String(offer.merchant||'').toLowerCase();
+         const known=merchant.includes('amazon')?/^(www\.)?amazon\.com\.br$/.test(host)&&/\/dp\/[a-z0-9]{10}/i.test(u.pathname):merchant.includes('magalu')?/^(www\.)?magazineluiza\.com\.br$/.test(host)&&u.pathname.includes('/p/'):merchant.includes('mercado livre')?/mercadolivre\.com\.br$/.test(host)&&/MLB-?\d+/i.test(u.pathname):false;
+         if(u.protocol!=='https:'||!known)throw Error('Página específica não confirmada');
+         link.href=u.href;actions.replaceChildren(link);
+        }catch(e){msg.textContent=e.message||'Link não confirmado';button.disabled=false;button.textContent='Tentar localizar'}
+       });
+       actions.append(button,msg);
+      }
+      card.append(name,title,price,actions);host.append(card);
      }
     }catch(error){status.textContent='Falha na pesquisa: '+String(error?.message||error)}
     finally{searchButton.disabled=false}
