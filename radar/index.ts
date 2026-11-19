@@ -710,7 +710,40 @@ async function dtRadarLoad(){
 $('dtRadarRefresh').onclick=dtRadarLoad;
 
 const params=new URLSearchParams(location.search);if(params.get('embedded')==='1')document.body.classList.add('embedded');const tab=params.get('tab'),item=params.get('item');if(item){$('usedSearch').value=item;dtSelectActiveProduct(item)}else if(dtActiveProduct){dtSelectActiveProduct(dtActiveProduct,{persist:false})}renderHistory();if(['precificar','ofertas','historico','alertas'].includes(tab||'')){const button=document.querySelector('nav button[data-tab="'+tab+'"]');if(button)button.click()}
-</script></body></html>`;
+window.__dtRadarBoot=true;
+</script><script>
+(function(){
+ const $=id=>document.getElementById(id);
+ const fallbackMode=()=>!window.__dtRadarBoot;
+ window.addEventListener('error',function(){const n=$('dtOfferSearchStatus');if(n&&fallbackMode())n.textContent='Painel em modo de recuperação. As abas e a pesquisa continuam disponíveis.'});
+ document.addEventListener('click',async function(e){
+  if(!fallbackMode())return;
+  const tab=e.target.closest('nav button[data-tab]');
+  if(tab){e.preventDefault();e.stopImmediatePropagation();document.querySelectorAll('nav button[data-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab.dataset.tab));return}
+  const button=e.target.closest('#searchGo');if(!button)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  const input=$('search'),host=$('stores'),status=$('dtOfferSearchStatus'),q=String(input?.value||'').trim();
+  if(!host||!status||q.length<3){if(status)status.textContent='Digite pelo menos 3 caracteres para pesquisar.';return}
+  button.disabled=true;status.textContent='Modo de recuperação: consultando ofertas...';host.replaceChildren();
+  try{
+   const base=location.pathname.startsWith('/radar')?'/radar':'/';
+   const response=await fetch(base+'?api=search&q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});
+   const data=await response.json();
+   if(!response.ok||data.status!=='ready'||!Array.isArray(data.offers))throw Error(data.error||'Pesquisa indisponível');
+   status.textContent='Pesquisa concluída • '+data.offers.length+' ofertas encontradas.';
+   for(const offer of data.offers){
+    const card=document.createElement('article');card.className='radar-offer';
+    const name=document.createElement('strong');name.textContent=String(offer.merchant||'Loja');
+    const title=document.createElement('p');title.textContent=String(offer.title||'Produto');
+    const price=document.createElement('b');const value=Number(offer.price);price.textContent=Number.isFinite(value)?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value):'Preço indisponível';
+    card.append(name,title,price);host.append(card);
+   }
+  }catch(err){status.textContent='Não foi possível concluir a pesquisa: '+String(err.message||err)}
+  finally{button.disabled=false}
+ },true);
+ if(fallbackMode()){const n=$('dtOfferSearchStatus');if(n)n.textContent='Painel em modo de recuperação. Abas e pesquisa reativadas.'}
+})();
+</script></body></html>`
 page=page.replace(/\\u\{([0-9a-f]+)\}|\\u([0-9a-f]{4})/gi,(_,long,short)=>String.fromCodePoint(parseInt(long||short,16)));
 const adhocRadarRate=new Map();
 function radarRateLimit(req){
